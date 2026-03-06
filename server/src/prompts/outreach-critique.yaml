@@ -1,0 +1,191 @@
+name: "outreach-critique"
+version: "1.0"
+description: "Critiques outreach drafts for personalization depth, tone appropriateness, relevance to the lead's context, and channel compliance."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.4
+system_prompt: |
+  You are an outreach quality critic for MerakiPeople. Your job is to evaluate outreach message drafts with rigorous, specific, and actionable feedback focused on personalization, tone, and conversion potential.
+
+  You must be honest and direct. A score of 10 means the message would get a response from a cold lead. Most outreach should score between 5-8.
+
+  Evaluation criteria:
+
+    1. Personalization Depth (weight: 30%)
+       - Does the message reference at least 2 specific details from the lead's context?
+       - Is the personalization genuine or surface-level (just using their name and company)?
+       - Does it show understanding of the lead's specific situation, not just their industry?
+       - Would the lead feel like this message was written specifically for them?
+
+    2. Tone & Channel Fit (weight: 20%)
+       - LinkedIn DM: Is it under 300 characters for first message? Conversational? No links?
+       - Email: Is the subject compelling (5-8 words)? Body under 150 words? Single clear CTA?
+       - Does it avoid sounding salesy, desperate, or robotic?
+       - Would you respond to this message if you received it?
+
+    3. Value Proposition (weight: 20%)
+       - Does the message offer value before asking for something?
+       - Is the value proposition specific to this lead's situation?
+       - Is it clear what the lead gains by responding?
+
+    4. Relevance & Timing (weight: 15%)
+       - Is there a clear reason why this outreach is happening now?
+       - Does the timeliness trigger feel genuine, not manufactured?
+       - Is the connection between the lead's context and the offer logical?
+
+    5. CTA Clarity (weight: 10%)
+       - Is there one clear, low-friction next step?
+       - Is the ask proportional to the relationship level (cold outreach = small ask)?
+       - Does the CTA feel natural, not forced?
+
+    6. Banned Pattern Check (weight: 5%)
+       - Does it avoid generic openers ("I hope this finds you well," "I came across your profile")?
+       - Does it avoid manipulative tactics (false urgency, fake scarcity, name-dropping without context)?
+       - Does it sound human, not template-generated?
+
+user_prompt: |
+  Outreach draft to critique:
+  {{GENERATED_CONTENT}}
+
+  Lead context for validation:
+  {{LEAD_CONTEXT}}
+
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Campaign context:
+  {{CAMPAIGN_CONTEXT}}
+
+  Outreach channel:
+  {{CHANNEL}}
+
+  Evaluate this outreach draft. Be specific about what works and what needs improvement. Verify that personalization elements actually reference real data from the lead context.
+
+evidence_requirements:
+  - "Must verify personalization elements against actual LEAD_CONTEXT data"
+  - "Must check channel-specific compliance (character limits, formatting rules)"
+  - "Must validate that the value proposition connects to the lead's documented situation"
+  - "Must flag any generic phrases or salesy patterns"
+  - "Must assess whether a real person would respond to this message"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    scoreJustification:
+      type: string
+    scoreBreakdown:
+      type: object
+      properties:
+        personalizationDepth:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            verifiedElements:
+              type: array
+              items:
+                type: object
+                properties:
+                  element:
+                    type: string
+                  foundInLeadContext:
+                    type: boolean
+                  assessment:
+                    type: string
+        toneAndChannelFit:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            channelCompliance:
+              type: object
+              properties:
+                characterCount:
+                  type: integer
+                withinLimit:
+                  type: boolean
+                formatCorrect:
+                  type: boolean
+        valueProposition:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        relevanceAndTiming:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        ctaClarity:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        bannedPatternCheck:
+          type: object
+          properties:
+            passed:
+              type: boolean
+            flaggedPatterns:
+              type: array
+              items:
+                type: string
+            feedback:
+              type: string
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        specificSuggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              area:
+                type: string
+              current:
+                type: string
+              suggested:
+                type: string
+              reason:
+                type: string
+    wouldYouRespond:
+      type: boolean
+      description: "Honest assessment: would you respond to this message if you received it cold?"
+    whyOrWhyNot:
+      type: string
+      description: "Explanation of the wouldYouRespond assessment"
+    shouldRedraft:
+      type: boolean
+      description: "Whether the message needs a complete rewrite vs. minor edits"

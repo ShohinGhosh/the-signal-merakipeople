@@ -1,0 +1,264 @@
+name: "monday-brief"
+version: "1.0"
+description: "Generates the weekly Monday Brief with Signal Score analysis, top post breakdown, pipeline summary, pillar performance, and specific actionable recommendations."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 3000
+temperature: 0.5
+system_prompt: |
+  You are the chief strategist at MerakiPeople, generating the weekly Monday Brief — the most important strategic document the client receives each week. This brief sets the direction for the entire week.
+
+  The Monday Brief must be:
+    - Honest: If the Signal Score dropped, say why. Never sugarcoat bad performance.
+    - Specific: Every recommendation must be actionable THIS WEEK, not someday.
+    - Data-driven: Every claim must cite a specific metric.
+    - Concise: Busy founders read this in 3 minutes. Respect their time.
+    - Forward-looking: Don't just report what happened — say what to do about it.
+
+  Brief structure:
+
+    1. Signal Score Summary
+       - The overall Signal Score (1-100) and whether it went up or down from last week.
+       - Score breakdown by component: Content Performance, Pipeline Health, Strategy Alignment, Engagement Quality.
+       - One-sentence verdict: Is the brand momentum growing, stable, or declining?
+
+    2. Top Post Analysis
+       - Which post performed best and why.
+       - What made it work: topic, format, timing, hook, or audience resonance?
+       - What can be replicated this week.
+       - If no post performed well, be honest about that and analyze why.
+
+    3. Pipeline Snapshot
+       - New leads this week, pipeline value, conversion rate.
+       - Which ICP segments are most responsive.
+       - Outreach performance: open rates, response rates, meeting bookings.
+       - One specific outreach action for this week.
+
+    4. Pillar Performance
+       - Per-pillar engagement rates and reach.
+       - Which pillar is underserved or overserved.
+       - One specific pillar action for this week.
+
+    5. This Week's Recommendations
+       - 2-3 specific, one-step actions for this week.
+       - Each recommendation must include: what to do, why (citing data), and expected impact.
+       - Recommendations must be ranked by priority.
+       - At least one recommendation should be about content, one about outreach.
+
+    6. Signals to Watch
+       - 1-3 emerging signals from the feed that could affect the strategy.
+       - What to do about each signal (act now, watch, or ignore).
+
+  Voice for the brief:
+    - Direct and confident, not hedging.
+    - Use "you" when addressing the client.
+    - Short paragraphs, bullet points where helpful.
+    - No fluff, no filler, no motivational quotes.
+
+user_prompt: |
+  Signal Score data:
+  {{SIGNAL_SCORE}}
+
+  Score breakdown by component:
+  {{SCORE_BREAKDOWN}}
+
+  Top performing post data:
+  {{TOP_POST}}
+
+  Pipeline summary (leads, conversions, outreach metrics):
+  {{PIPELINE_SUMMARY}}
+
+  Pillar performance data:
+  {{PILLAR_PERFORMANCE}}
+
+  Strategy context (current documented strategy):
+  {{STRATEGY_CONTEXT}}
+
+  Generate the Monday Brief. Be honest about what's working and what isn't. Every recommendation must be specific enough to execute today. Cite specific numbers for every claim.
+
+evidence_requirements:
+  - "Signal Score analysis must reference each component score and explain changes from last week"
+  - "Top post analysis must cite specific engagement metrics (impressions, engagement rate, saves, comments)"
+  - "Pipeline snapshot must include specific numbers for leads, conversion rates, and outreach performance"
+  - "Pillar performance must compare across pillars with specific engagement data"
+  - "Every recommendation must cite the data that justifies it"
+  - "Signals to Watch must connect to specific strategy positions or ICP segments"
+
+output_schema:
+  type: object
+  properties:
+    briefDate:
+      type: string
+      description: "The Monday date this brief covers"
+    signalScoreSummary:
+      type: object
+      properties:
+        score:
+          type: integer
+          minimum: 1
+          maximum: 100
+        previousScore:
+          type: integer
+        trend:
+          type: string
+          enum:
+            - up
+            - down
+            - stable
+        breakdown:
+          type: object
+          properties:
+            contentPerformance:
+              type: object
+              properties:
+                score:
+                  type: integer
+                insight:
+                  type: string
+            pipelineHealth:
+              type: object
+              properties:
+                score:
+                  type: integer
+                insight:
+                  type: string
+            strategyAlignment:
+              type: object
+              properties:
+                score:
+                  type: integer
+                insight:
+                  type: string
+            engagementQuality:
+              type: object
+              properties:
+                score:
+                  type: integer
+                insight:
+                  type: string
+        verdict:
+          type: string
+          description: "One-sentence assessment of brand momentum"
+    topPostAnalysis:
+      type: object
+      properties:
+        postTitle:
+          type: string
+        platform:
+          type: string
+        metrics:
+          type: object
+          properties:
+            impressions:
+              type: integer
+            engagementRate:
+              type: number
+            saves:
+              type: integer
+            comments:
+              type: integer
+            shares:
+              type: integer
+        whyItWorked:
+          type: string
+          description: "Specific analysis of what made this post succeed"
+        replicationStrategy:
+          type: string
+          description: "How to replicate this success this week"
+    pipelineSnapshot:
+      type: object
+      properties:
+        newLeads:
+          type: integer
+        pipelineValue:
+          type: string
+        conversionRate:
+          type: number
+        topRespondingSegment:
+          type: string
+        outreachMetrics:
+          type: object
+          properties:
+            openRate:
+              type: number
+            responseRate:
+              type: number
+            meetingsBooked:
+              type: integer
+        weeklyOutreachAction:
+          type: string
+          description: "One specific outreach action for this week"
+    pillarPerformance:
+      type: array
+      items:
+        type: object
+        properties:
+          pillarName:
+            type: string
+          postsThisWeek:
+            type: integer
+          avgEngagementRate:
+            type: number
+          reach:
+            type: integer
+          trend:
+            type: string
+            enum:
+              - improving
+              - stable
+              - declining
+          insight:
+            type: string
+    weeklyPillarAction:
+      type: string
+      description: "One specific pillar-related action for this week"
+    recommendations:
+      type: array
+      items:
+        type: object
+        properties:
+          priority:
+            type: integer
+            description: "1 = highest priority"
+          category:
+            type: string
+            enum:
+              - content
+              - outreach
+              - strategy
+              - campaign
+          action:
+            type: string
+            description: "The specific action to take — must be executable today"
+          evidence:
+            type: string
+            description: "The data that justifies this recommendation"
+          expectedImpact:
+            type: string
+            description: "What this action should achieve"
+      minItems: 2
+      maxItems: 3
+    signalsToWatch:
+      type: array
+      items:
+        type: object
+        properties:
+          signal:
+            type: string
+            description: "The signal to watch"
+          relevance:
+            type: string
+            description: "How this connects to the strategy or ICP"
+          recommendation:
+            type: string
+            enum:
+              - act_now
+              - watch
+              - ignore
+          actionIfActing:
+            type: string
+            description: "What to do if acting on this signal"
+      minItems: 1
+      maxItems: 3
+    briefNarrative:
+      type: string
+      description: "The full brief narrative text, formatted for reading in 3 minutes or less"

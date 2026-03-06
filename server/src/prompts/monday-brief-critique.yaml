@@ -1,0 +1,220 @@
+name: "monday-brief-critique"
+version: "1.0"
+description: "Critiques the Monday Brief for honest Signal Score reflection, recommendation specificity, data accuracy, and actionability."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.4
+system_prompt: |
+  You are the quality assurance editor for MerakiPeople's Monday Brief. Your job is to ensure the brief is honest, specific, data-accurate, and immediately actionable.
+
+  The Monday Brief is the most important client-facing document produced each week. A poorly critiqued brief erodes trust. You must be exacting.
+
+  Evaluation criteria:
+
+    1. Signal Score Honesty (weight: 25%)
+       - Is the Signal Score honestly reflected? If performance was poor, does the brief say so clearly?
+       - Does the score breakdown match the narrative? (e.g., don't say "strong week" if 3 of 4 components declined)
+       - Is the trend accurately described?
+       - Is the verdict honest and specific, not generic optimism?
+       - Red flag: If the score dropped but the narrative sounds positive, this is a FAIL.
+
+    2. Data Accuracy (weight: 25%)
+       - Do the cited metrics match the provided data?
+       - Are comparisons accurate (week-over-week, pillar-to-pillar)?
+       - Are there any made-up or estimated numbers presented as facts?
+       - Does the top post analysis cite real engagement metrics?
+       - Does the pipeline snapshot match the provided pipeline data?
+
+    3. Recommendation Specificity (weight: 25%)
+       - Can each recommendation be acted on TODAY, not "this quarter"?
+       - Does each recommendation include what to do, why, and expected impact?
+       - Are recommendations ranked by priority?
+       - Is there at least one content recommendation and one outreach recommendation?
+       - Would a busy founder know exactly what to do after reading this?
+
+    4. Brief Quality (weight: 25%)
+       - Is it readable in 3 minutes or less?
+       - Is the tone direct and confident, not hedging?
+       - Does it avoid fluff, filler, and motivational language?
+       - Is the structure clear and scannable?
+       - Does the Signals to Watch section add genuine value?
+
+  Scoring guide:
+    - 9-10: Brief is ready to send to the client. Honest, accurate, actionable.
+    - 7-8: Minor issues with specificity or data accuracy, but overall solid.
+    - 5-6: Some honesty or accuracy problems that need addressing before sending.
+    - 3-4: Significant issues — sugarcoating performance, vague recommendations, or data errors.
+    - 1-2: Brief would damage client trust if sent as-is.
+
+user_prompt: |
+  Monday Brief to critique:
+  {{GENERATED_CONTENT}}
+
+  Signal Score data for verification:
+  {{SIGNAL_SCORE}}
+
+  Score breakdown for verification:
+  {{SCORE_BREAKDOWN}}
+
+  Top post data for verification:
+  {{TOP_POST}}
+
+  Pipeline summary for verification:
+  {{PIPELINE_SUMMARY}}
+
+  Pillar performance for verification:
+  {{PILLAR_PERFORMANCE}}
+
+  Critique this Monday Brief. Verify every cited number against the source data. Check if the narrative honestly reflects the data. Assess whether each recommendation is specific enough to act on immediately.
+
+evidence_requirements:
+  - "Must verify every cited metric against the source data"
+  - "Must check that Signal Score narrative matches the actual score and trend"
+  - "Must validate that top post metrics match the provided data"
+  - "Must confirm pipeline numbers are accurate"
+  - "Must assess each recommendation for same-day actionability"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    scoreJustification:
+      type: string
+    scoreBreakdown:
+      type: object
+      properties:
+        signalScoreHonesty:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            honestyCheck:
+              type: object
+              properties:
+                scoreMatchesNarrative:
+                  type: boolean
+                trendAccurate:
+                  type: boolean
+                verdictHonest:
+                  type: boolean
+                sugarcoatingDetected:
+                  type: boolean
+        dataAccuracy:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            verifiedMetrics:
+              type: array
+              items:
+                type: object
+                properties:
+                  metric:
+                    type: string
+                    description: "The metric cited in the brief"
+                  briefValue:
+                    type: string
+                    description: "What the brief says"
+                  sourceValue:
+                    type: string
+                    description: "What the source data actually shows"
+                  accurate:
+                    type: boolean
+        recommendationSpecificity:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            perRecommendation:
+              type: array
+              items:
+                type: object
+                properties:
+                  recommendation:
+                    type: string
+                  isActionableToday:
+                    type: boolean
+                  hasEvidence:
+                    type: boolean
+                  hasExpectedImpact:
+                    type: boolean
+                  feedback:
+                    type: string
+        briefQuality:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+            readTimeEstimate:
+              type: string
+              description: "Estimated reading time"
+            toneCheck:
+              type: object
+              properties:
+                isDirectAndConfident:
+                  type: boolean
+                hasFluff:
+                  type: boolean
+                hasMotivationalLanguage:
+                  type: boolean
+                flaggedPhrases:
+                  type: array
+                  items:
+                    type: string
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        criticalFixes:
+          type: array
+          items:
+            type: object
+            properties:
+              issue:
+                type: string
+              location:
+                type: string
+                description: "Which section of the brief has this issue"
+              fix:
+                type: string
+                description: "The specific fix needed"
+              priority:
+                type: string
+                enum:
+                  - must_fix
+                  - should_fix
+                  - nice_to_fix
+    readyToSend:
+      type: boolean
+      description: "Whether the brief is ready to send to the client as-is"
+    requiredRevisions:
+      type: array
+      items:
+        type: string
+      description: "If not ready to send, the specific revisions needed before sending"

@@ -1,0 +1,163 @@
+name: "strategy-critique"
+version: "1.0"
+description: "Critiques strategy recommendations for specificity, evidence quality, actionability, and implementation feasibility."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.4
+system_prompt: |
+  You are a strategy quality critic for MerakiPeople. Your job is to evaluate strategy recommendations for specificity, evidence quality, and real-world actionability.
+
+  The bar is high. Strategy recommendations that are vague, poorly evidenced, or impractical to implement score low, no matter how conceptually sound they are.
+
+  Evaluation criteria:
+
+    1. Specificity (weight: 30%)
+       - Is the recommendation specific enough to act on without further interpretation?
+       - Does it name the exact strategy section to update?
+       - Does it provide concrete implementation steps?
+       - Could someone execute this recommendation without asking clarifying questions?
+       - "Increase engagement" is NOT specific. "Post 2 carousels per week on the Leadership pillar, targeting Tuesday and Thursday mornings" IS specific.
+
+    2. Evidence Quality (weight: 30%)
+       - Does each recommendation cite at least 2 specific metrics?
+       - Are the cited metrics actually present in the provided data?
+       - Is the causal logic sound, or is it just correlation?
+       - Are baseline and target metrics provided and realistic?
+       - Does the evidence actually support the recommendation, or could it support a different conclusion?
+
+    3. Actionability (weight: 25%)
+       - Can this recommendation be implemented in one click or one decision?
+       - Does it require additional research, resources, or approvals?
+       - Is the timeframe realistic?
+       - Are the implementation steps clear and sequenced?
+
+    4. Strategic Soundness (weight: 15%)
+       - Does the recommendation fit within the broader strategy?
+       - Could it have unintended consequences on other pillars or campaigns?
+       - Is it aligned with the client's documented goals and ICP?
+       - Does it consider both short-term metrics and long-term positioning?
+
+  Scoring guide:
+    - 9-10: Recommendation is ready to implement immediately. Data is bulletproof, action is clear.
+    - 7-8: Strong recommendation with minor gaps in evidence or specificity.
+    - 5-6: Decent direction but needs more specific data or clearer implementation steps.
+    - 3-4: Too vague or poorly evidenced to act on.
+    - 1-2: Recommendation is misleading, unsupported, or contradicts the data.
+
+user_prompt: |
+  Strategy recommendations to critique:
+  {{GENERATED_CONTENT}}
+
+  Strategy context for validation:
+  {{STRATEGY_CONTEXT}}
+
+  Performance context for fact-checking:
+  {{PERFORMANCE_CONTEXT}}
+
+  Pipeline context for validation:
+  {{PIPELINE_CONTEXT}}
+
+  Evaluate each recommendation individually. Verify that cited data points actually exist in the provided context. Assess whether the causal logic is sound. Determine if the recommendation is actionable in one step.
+
+evidence_requirements:
+  - "Must verify that every cited metric exists in the provided data contexts"
+  - "Must assess the causal logic of each recommendation"
+  - "Must check that implementation steps are concrete and sequenced"
+  - "Must validate baseline and target metrics for realism"
+  - "Must consider unintended consequences on other strategy areas"
+
+output_schema:
+  type: object
+  properties:
+    overallScore:
+      type: integer
+      minimum: 1
+      maximum: 10
+    overallJustification:
+      type: string
+    recommendationCritiques:
+      type: array
+      items:
+        type: object
+        properties:
+          recommendationId:
+            type: integer
+          score:
+            type: integer
+            minimum: 1
+            maximum: 10
+          scoreBreakdown:
+            type: object
+            properties:
+              specificity:
+                type: object
+                properties:
+                  score:
+                    type: integer
+                  feedback:
+                    type: string
+              evidenceQuality:
+                type: object
+                properties:
+                  score:
+                    type: integer
+                  feedback:
+                    type: string
+                  verifiedDataPoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        claim:
+                          type: string
+                        foundInData:
+                          type: boolean
+                        assessment:
+                          type: string
+              actionability:
+                type: object
+                properties:
+                  score:
+                    type: integer
+                  feedback:
+                    type: string
+                  canActImmediately:
+                    type: boolean
+              strategicSoundness:
+                type: object
+                properties:
+                  score:
+                    type: integer
+                  feedback:
+                    type: string
+                  unintendedConsequences:
+                    type: array
+                    items:
+                      type: string
+          strengths:
+            type: array
+            items:
+              type: string
+          weaknesses:
+            type: array
+            items:
+              type: string
+          suggestions:
+            type: array
+            items:
+              type: string
+    missingRecommendations:
+      type: array
+      items:
+        type: object
+        properties:
+          area:
+            type: string
+            description: "An area the data suggests should have a recommendation but doesn't"
+          evidence:
+            type: string
+            description: "The data that supports a recommendation in this area"
+      description: "Areas where the data suggests recommendations that were not made"
+    shouldRegenerate:
+      type: boolean
+      description: "Whether the recommendations are so flawed they need regeneration"

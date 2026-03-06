@@ -1,0 +1,196 @@
+name: "post-critique"
+version: "1.0"
+description: "Critiques generated post content for strategy alignment, voice fidelity, evidence backing, platform fit, hook quality, CTA effectiveness, and banned phrases."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 2000
+temperature: 0.4
+system_prompt: |
+  You are a senior content quality critic for MerakiPeople. Your job is to evaluate generated social media posts with rigorous, specific, and actionable feedback.
+
+  You must be honest. A score of 10 means the post is ready to publish immediately with no changes. Most posts should score between 5-8. Only give scores below 4 if the post fundamentally misses the mark.
+
+  Evaluation criteria (each scored and explained):
+
+    1. Strategy Alignment (weight: 20%)
+       - Does the post serve a documented content pillar?
+       - Is the topic relevant to the ICP's documented pain points?
+       - Does it support an active campaign objective?
+
+    2. Voice Fidelity (weight: 20%)
+       - Does it sound like the author wrote it?
+       - Does it match their vocabulary, tone, and personality?
+       - Would the author be comfortable posting this under their name?
+
+    3. Evidence Backing (weight: 15%)
+       - Are claims supported by cited data?
+       - Are statistics verifiable?
+       - Does the evidence object properly map claims to sources?
+
+    4. Platform Fit (weight: 15%)
+       - Is the format appropriate for the platform?
+       - Does the length match platform best practices?
+       - Are hashtags, CTAs, and formatting platform-optimized?
+
+    5. Hook Quality (weight: 15%)
+       - Would this hook stop the scroll?
+       - Is it specific rather than generic?
+       - Does it create curiosity, controversy, or recognition?
+
+    6. CTA Effectiveness (weight: 10%)
+       - Is the CTA natural and non-pushy?
+       - Does it align with the campaign goal?
+       - Is it clear what the reader should do next?
+
+    7. Banned Phrases Check (weight: 5%)
+       - Does the post use any phrases from the author's banned list?
+       - Does it use common AI-sounding phrases (e.g., "in today's fast-paced world", "game-changer", "let's dive in")?
+
+  Evidence check rules:
+    - has_strategy_references: TRUE only if the post's evidence object cites specific strategy data.
+    - has_data_points: TRUE only if claims reference measurable data with sources.
+    - is_voice_consistent: TRUE only if the post matches the author's documented voice profile.
+    - is_platform_appropriate: TRUE only if format, length, and features match the target platform.
+
+user_prompt: |
+  Generated post content to critique:
+  {{GENERATED_CONTENT}}
+
+  Strategy context for validation:
+  {{STRATEGY_CONTEXT}}
+
+  Author voice profile:
+  {{AUTHOR_VOICE}}
+
+  Target platform:
+  {{PLATFORM}}
+
+  Evaluate this post rigorously. Be specific about what works and what doesn't. Provide actionable feedback that the generator can use to improve the post.
+
+evidence_requirements:
+  - "Must reference specific strategy pillars when evaluating strategy alignment"
+  - "Must cite specific voice profile traits when evaluating voice fidelity"
+  - "Must validate that cited evidence actually exists in the provided context"
+  - "Must check post against platform-specific best practices"
+  - "Must flag any banned phrases found in the post"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    scoreBreakdown:
+      type: object
+      properties:
+        strategyAlignment:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        voiceFidelity:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        evidenceBacking:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        platformFit:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        hookQuality:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        ctaEffectiveness:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 10
+            feedback:
+              type: string
+        bannedPhrasesCheck:
+          type: object
+          properties:
+            passed:
+              type: boolean
+            flaggedPhrases:
+              type: array
+              items:
+                type: string
+            feedback:
+              type: string
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        specificSuggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              area:
+                type: string
+              current:
+                type: string
+              suggested:
+                type: string
+              reason:
+                type: string
+    evidence_check:
+      type: object
+      properties:
+        has_strategy_references:
+          type: boolean
+        has_data_points:
+          type: boolean
+        is_voice_consistent:
+          type: boolean
+        is_platform_appropriate:
+          type: boolean
+    publishReady:
+      type: boolean
+      description: "Whether the post is ready to publish without further revision"
+    revisionPriority:
+      type: string
+      enum:
+        - critical
+        - moderate
+        - minor
+        - none
+      description: "How urgently revisions are needed"

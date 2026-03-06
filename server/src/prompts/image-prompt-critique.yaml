@@ -1,0 +1,174 @@
+name: "image-prompt-critique"
+version: "1.0"
+description: "Critiques image generation prompts for brand compliance, platform sizing correctness, and message clarity."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.4
+system_prompt: |
+  You are a visual brand quality critic for MerakiPeople. Your job is to evaluate image generation prompts for strict brand compliance, correct platform specifications, and effective visual communication.
+
+  You must be exacting about brand standards. A single brand violation (wrong color, human face, stock photography feel) drops the score significantly.
+
+  Evaluation criteria:
+
+    1. Brand Compliance (weight: 40%)
+       - Does the prompt specify deep navy #152B68 as the primary background?
+       - Does it use warm coral #FF6F61 as the accent color?
+       - Does it explicitly exclude human faces?
+       - Does it explicitly exclude stock photography aesthetic?
+       - Does it include geometric/abstract elements?
+       - Does it describe an editorial, clean aesthetic?
+       - Does it reference Outfit font style if text elements are involved?
+
+    2. Platform Sizing (weight: 20%)
+       - Are the dimensions correct for the target platform?
+       - Is the aspect ratio specified in the prompt?
+       - LinkedIn: 1200x627 (landscape), 1080x1080 (square), 1080x1350 (portrait)
+       - Instagram: 1080x1080 (square), 1080x1350 (4:5), 1080x1920 (9:16)
+
+    3. Message Clarity (weight: 20%)
+       - Does the visual concept reinforce the key message?
+       - Would a viewer understand the intended mood/feeling?
+       - Is the composition appropriate for the image type?
+
+    4. Prompt Specificity (weight: 20%)
+       - Is the prompt specific enough to produce consistent results?
+       - Are spatial relationships clearly described?
+       - Are textures and materials specified?
+       - Is there a clear negative prompt?
+
+  Scoring guide:
+    - 9-10: Prompt is perfect. Will generate an on-brand image on first attempt.
+    - 7-8: Minor issues that could be improved but won't break brand compliance.
+    - 5-6: Some brand compliance issues or vague descriptions that may produce inconsistent results.
+    - 3-4: Significant brand violations or missing critical specifications.
+    - 1-2: Fundamentally off-brand or unusable prompt.
+
+user_prompt: |
+  Image prompt to critique:
+  {{GENERATED_CONTENT}}
+
+  Target platform:
+  {{PLATFORM}}
+
+  Image type:
+  {{IMAGE_TYPE}}
+
+  Key message the image should reinforce:
+  {{KEY_MESSAGE}}
+
+  Evaluate this image generation prompt against brand guidelines, platform specifications, and message clarity. Be specific about any brand compliance violations.
+
+evidence_requirements:
+  - "Must check each brand guideline element explicitly"
+  - "Must verify exact hex color codes are specified"
+  - "Must validate dimensions against platform requirements"
+  - "Must assess whether visual concept connects to key message"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    scoreJustification:
+      type: string
+    brandComplianceCheck:
+      type: object
+      properties:
+        navyBackground:
+          type: object
+          properties:
+            present:
+              type: boolean
+            correctHex:
+              type: boolean
+            feedback:
+              type: string
+        coralAccent:
+          type: object
+          properties:
+            present:
+              type: boolean
+            correctHex:
+              type: boolean
+            feedback:
+              type: string
+        noHumanFaces:
+          type: object
+          properties:
+            specified:
+              type: boolean
+            feedback:
+              type: string
+        noStockPhotography:
+          type: object
+          properties:
+            specified:
+              type: boolean
+            feedback:
+              type: string
+        geometricElements:
+          type: object
+          properties:
+            present:
+              type: boolean
+            feedback:
+              type: string
+        editorialAesthetic:
+          type: object
+          properties:
+            present:
+              type: boolean
+            feedback:
+              type: string
+    platformSizing:
+      type: object
+      properties:
+        dimensionsCorrect:
+          type: boolean
+        aspectRatioSpecified:
+          type: boolean
+        feedback:
+          type: string
+    messageClarity:
+      type: object
+      properties:
+        conceptReinforcesMessage:
+          type: boolean
+        moodClear:
+          type: boolean
+        compositionAppropriate:
+          type: boolean
+        feedback:
+          type: string
+    promptSpecificity:
+      type: object
+      properties:
+        spatialRelationships:
+          type: boolean
+        texturesSpecified:
+          type: boolean
+        negativePromptPresent:
+          type: boolean
+        feedback:
+          type: string
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+        violations:
+          type: array
+          items:
+            type: string
+        suggestions:
+          type: array
+          items:
+            type: string
+    shouldRegenerate:
+      type: boolean
+      description: "Whether the prompt has brand violations serious enough to require regeneration"

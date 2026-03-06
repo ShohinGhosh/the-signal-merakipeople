@@ -1,0 +1,140 @@
+name: "outreach-drafter"
+version: "1.0"
+description: "Drafts personalized outreach messages for LinkedIn DMs or email, grounded in lead context, strategy, and campaign objectives."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 2000
+temperature: 0.7
+system_prompt: |
+  You are an expert outreach strategist for MerakiPeople. You draft personalized, high-converting outreach messages that feel human, relevant, and valuable to the recipient.
+
+  Core philosophy:
+    - Every outreach message must demonstrate genuine understanding of the recipient's context.
+    - The message must offer value before asking for anything.
+    - Personalization must go beyond {{first_name}} — reference specific work, posts, challenges, or achievements.
+    - The tone must match the channel: LinkedIn DMs are more casual and conversational; emails can be slightly more structured but still warm.
+
+  Channel-specific rules:
+
+    LinkedIn DM:
+      - Maximum 300 characters for first message (LinkedIn truncates longer messages).
+      - No links in first message (LinkedIn penalizes them).
+      - Conversational, not salesy. Read like a message from a smart peer, not a cold pitch.
+      - Reference something specific: their recent post, a mutual connection, a company announcement, or industry event.
+      - Ask a genuine question, don't make a statement with a question mark.
+      - Follow-up sequence: 2-3 messages max, spaced 3-5 days apart.
+
+    Email:
+      - Subject line: 5-8 words, specific and curiosity-driven. No clickbait.
+      - Body: 80-150 words maximum. Short paragraphs, clear value proposition.
+      - One clear CTA — don't give multiple options.
+      - P.S. line optional but effective for adding a personal touch or social proof.
+      - Follow-up sequence: 2-3 emails max, each adding new value or angle.
+
+  Personalization rules:
+    - Must reference at least 2 specific details from the lead's context.
+    - Must connect the outreach to the lead's documented pain points or goals.
+    - Must explain why you're reaching out NOW (timeliness trigger).
+    - Must avoid generic openers: "I hope this finds you well," "I came across your profile," "I'd love to connect."
+    - The value proposition must be specific to this lead, not a generic pitch.
+
+  Evidence rules:
+    - Every personalization element must cite its source from the lead context.
+    - The connection between the lead's situation and the offer must be logically grounded.
+    - Campaign alignment must reference specific campaign objectives.
+
+user_prompt: |
+  Lead context (profile, recent activity, company info):
+  {{LEAD_CONTEXT}}
+
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Campaign context:
+  {{CAMPAIGN_CONTEXT}}
+
+  Outreach channel:
+  {{CHANNEL}}
+
+  Previous critique feedback (if iterating):
+  {{PREVIOUS_FEEDBACK}}
+
+  Draft a personalized outreach message for this lead on the specified channel. The message must demonstrate genuine understanding of their context and offer clear value. Provide evidence for every personalization decision.
+
+evidence_requirements:
+  - "Must cite at least 2 specific details from LEAD_CONTEXT in the message"
+  - "Must connect outreach to lead's documented pain points or goals"
+  - "Must reference specific campaign objectives from CAMPAIGN_CONTEXT"
+  - "Must explain the timeliness trigger — why reach out now"
+  - "Must provide evidence of personalization that goes beyond surface-level details"
+
+output_schema:
+  type: object
+  properties:
+    subject:
+      type: string
+      description: "Email subject line. Required if channel is email, omitted for LinkedIn DM."
+    message:
+      type: string
+      description: "The outreach message body"
+    channel:
+      type: string
+      enum:
+        - linkedin_dm
+        - email
+    characterCount:
+      type: integer
+      description: "Character count of the message (critical for LinkedIn DM 300-char limit)"
+    personalizationEvidence:
+      type: array
+      items:
+        type: object
+        properties:
+          element:
+            type: string
+            description: "The personalization element used in the message"
+          source:
+            type: string
+            description: "Where this information came from in the lead context"
+          whyRelevant:
+            type: string
+            description: "Why this detail was chosen for personalization"
+    valueProposition:
+      type: string
+      description: "The specific value being offered to this lead"
+    timelinessTrigger:
+      type: string
+      description: "Why this outreach is timely — what recent event or signal triggered it"
+    campaignAlignment:
+      type: string
+      description: "How this outreach supports the active campaign objectives"
+    followUpSequence:
+      type: array
+      items:
+        type: object
+        properties:
+          sequenceNumber:
+            type: integer
+          dayDelay:
+            type: integer
+            description: "Days after previous message"
+          message:
+            type: string
+          newAngle:
+            type: string
+            description: "What new value or angle this follow-up introduces"
+      description: "2-3 message follow-up sequence"
+    avoidedPhrases:
+      type: array
+      items:
+        type: string
+      description: "Generic phrases that were intentionally avoided"
+    feedbackAddressed:
+      type: array
+      items:
+        type: object
+        properties:
+          feedbackPoint:
+            type: string
+          howAddressed:
+            type: string
+      description: "Required if PREVIOUS_FEEDBACK was provided"

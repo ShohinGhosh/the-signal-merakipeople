@@ -1,0 +1,180 @@
+name: "strategy-recommender"
+version: "1.0"
+description: "Generates 1-3 specific, actionable, evidence-based strategy update recommendations based on performance data, pipeline context, and pillar performance."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 2500
+temperature: 0.5
+system_prompt: |
+  You are a senior brand strategist at MerakiPeople. Your job is to analyze performance data, pipeline health, and content pillar effectiveness to generate specific, actionable strategy recommendations.
+
+  Recommendation philosophy:
+    - Every recommendation must be backed by specific data from the provided context.
+    - Recommendations must be actionable in one step — not vague directional advice.
+    - Maximum 3 recommendations. Fewer is better if fewer are warranted.
+    - Each recommendation must explain what to change, why (with evidence), and the expected impact.
+    - Never recommend what's already working unless the data suggests doubling down is the right move.
+
+  Analysis framework:
+
+    1. Performance Analysis
+       - Which content pillars are overperforming vs. underperforming?
+       - What formats are driving the most engagement per pillar?
+       - Are there engagement patterns (time of day, day of week, post length)?
+       - What's the save-to-impression ratio? (High saves = high-value content)
+       - What's the comment-to-like ratio? (High comments = high conversation content)
+
+    2. Pipeline Analysis
+       - Is outreach converting? At what rate?
+       - Are certain ICP segments responding better than others?
+       - Is the pipeline growing, stagnant, or shrinking?
+       - What channel is producing the best leads?
+
+    3. Pillar Performance
+       - Are all pillars getting equal attention or is there imbalance?
+       - Should any pillar be retired, modified, or replaced?
+       - Are there emerging topics that deserve their own pillar?
+
+    4. Strategy Drift Detection
+       - Is the executed content drifting from the documented strategy?
+       - Are there patterns in what the author gravitates toward vs. what was planned?
+       - Should the strategy adapt to match natural tendencies or should execution be corrected?
+
+  Evidence standards:
+    - Every claim must reference specific metrics from the provided data.
+    - Comparisons must use specific numbers (e.g., "Pillar A averaged 3.2% engagement vs. Pillar B at 1.1%").
+    - Recommendations must include baseline metrics and target metrics.
+    - Never say "consider" or "think about" — say "do this, because this data shows X."
+
+user_prompt: |
+  Strategy context (current documented strategy):
+  {{STRATEGY_CONTEXT}}
+
+  Performance context (content performance metrics):
+  {{PERFORMANCE_CONTEXT}}
+
+  Pipeline context (outreach and lead pipeline data):
+  {{PIPELINE_CONTEXT}}
+
+  Pillar performance (per-pillar engagement and reach data):
+  {{PILLAR_PERFORMANCE}}
+
+  Analyze the data and generate 1-3 specific, actionable strategy recommendations. Each recommendation must cite specific data points and explain the expected impact. Do not make recommendations without evidence.
+
+evidence_requirements:
+  - "Every recommendation must cite at least 2 specific metrics from the provided data"
+  - "Must compare current performance to previous periods or benchmarks"
+  - "Must specify exact strategy section to update, not vague areas"
+  - "Must include baseline metric and target metric for each recommendation"
+  - "Must explain causation logic, not just correlation"
+
+output_schema:
+  type: object
+  properties:
+    analysisSnapshot:
+      type: object
+      properties:
+        overallHealth:
+          type: string
+          enum:
+            - strong
+            - moderate
+            - needs_attention
+            - critical
+        healthJustification:
+          type: string
+          description: "Why this health assessment, citing specific metrics"
+        topPerformingPillar:
+          type: string
+        underperformingPillar:
+          type: string
+        pipelineTrend:
+          type: string
+          enum:
+            - growing
+            - stable
+            - declining
+        strategyDrift:
+          type: boolean
+          description: "Is execution drifting from documented strategy?"
+        driftDetails:
+          type: string
+          description: "If drift detected, what specifically is drifting and how"
+    recommendations:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: integer
+          title:
+            type: string
+            description: "Clear, actionable title (e.g., 'Double carousel frequency for Leadership pillar')"
+          category:
+            type: string
+            enum:
+              - content_mix
+              - pillar_adjustment
+              - format_shift
+              - campaign_pivot
+              - audience_refinement
+              - outreach_optimization
+              - voice_adjustment
+          strategySectionToUpdate:
+            type: string
+            description: "Exact section of the strategy document to update"
+          currentState:
+            type: string
+            description: "What the strategy/execution currently says/does, with metrics"
+          recommendedChange:
+            type: string
+            description: "The specific change to make"
+          evidence:
+            type: array
+            items:
+              type: object
+              properties:
+                dataPoint:
+                  type: string
+                  description: "The specific metric or data point"
+                source:
+                  type: string
+                  description: "Where this data comes from (performance, pipeline, pillar)"
+                implication:
+                  type: string
+                  description: "What this data point implies for the recommendation"
+          baselineMetric:
+            type: string
+            description: "Current metric value being improved"
+          targetMetric:
+            type: string
+            description: "Expected metric value after implementing the recommendation"
+          expectedImpact:
+            type: string
+            description: "Narrative description of expected impact"
+          implementationSteps:
+            type: array
+            items:
+              type: string
+            description: "1-3 concrete steps to implement this recommendation"
+          priority:
+            type: string
+            enum:
+              - high
+              - medium
+              - low
+          timeframe:
+            type: string
+            description: "When to implement: immediate, this_week, this_month"
+      minItems: 1
+      maxItems: 3
+    noActionAreas:
+      type: array
+      items:
+        type: object
+        properties:
+          area:
+            type: string
+          reason:
+            type: string
+            description: "Why no change is needed here, with supporting data"
+      description: "Areas where the current strategy is working well and should not be changed"

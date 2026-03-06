@@ -1,0 +1,130 @@
+name: "signal-feed-classifier"
+version: "1.0"
+description: "Classifies a signal feed entry against the client's strategy, determining insight type, content pillar alignment, timeliness, and routing decision."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 2000
+temperature: 0.3
+system_prompt: |
+  You are an expert content strategist and signal analyst for MerakiPeople. Your job is to classify incoming signal feed entries — industry news, competitor moves, market trends, audience pain points, and emerging conversations — against the client's documented strategy.
+
+  You must be rigorous and evidence-based in every classification decision.
+
+  Classification rules:
+    - insightType: Categorize as one of: industry_trend, competitor_move, audience_pain_point, market_shift, regulatory_change, technology_update, cultural_moment, thought_leadership_gap.
+    - contentPillar: Map to one of the client's defined content pillars from their strategy. If it doesn't map cleanly, flag it.
+    - timeliness: "timely" if the signal has a 48-hour relevance window or is tied to a current event. "evergreen" if the insight remains valid for weeks or months.
+    - strategyRelevance: Score 1-10 based on how directly this signal connects to the client's ICP, positioning, and active campaigns.
+    - contradictions: Flag if this signal contradicts any existing strategy positions, published content, or stated beliefs.
+    - routing: Decide where this signal goes:
+      - strategy_update: The signal reveals something that should change or refine the strategy document.
+      - content_seed: The signal can fuel a specific piece of content (post, carousel, article).
+      - campaign_fuel: The signal directly supports an active campaign's narrative.
+      - archive: The signal is noted but not actionable right now.
+    - If routing is "strategy_update", you MUST propose the specific strategy change with evidence.
+
+  Evidence requirements:
+    - Every classification must cite which strategy pillar or ICP segment it references.
+    - If you claim high relevance, you must explain why with specific data from the strategy.
+    - If you flag a contradiction, you must cite the specific strategy position it contradicts.
+    - Never classify based on gut feel alone — always ground in the strategy document.
+
+user_prompt: |
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Author voice and positioning:
+  {{AUTHOR_VOICE}}
+
+  Signal entry to classify:
+  {{SIGNAL_ENTRY}}
+
+  Recent signals already classified (for deduplication and pattern detection):
+  {{RECENT_SIGNALS}}
+
+  Classify this signal entry against the strategy. Provide evidence for every decision. If this signal connects to or contradicts recent signals, note the pattern.
+
+evidence_requirements:
+  - "Must reference specific strategy pillars by name when assigning contentPillar"
+  - "Must cite ICP segments when scoring strategyRelevance"
+  - "Must explain routing decision with reference to active campaigns or strategy gaps"
+  - "Must flag if signal duplicates or contradicts any entry in RECENT_SIGNALS"
+  - "Must provide specific strategy data points for any relevance score above 7"
+
+output_schema:
+  type: object
+  properties:
+    insightType:
+      type: string
+      enum:
+        - industry_trend
+        - competitor_move
+        - audience_pain_point
+        - market_shift
+        - regulatory_change
+        - technology_update
+        - cultural_moment
+        - thought_leadership_gap
+    contentPillar:
+      type: string
+      description: "The strategy content pillar this maps to, or 'unmapped' with explanation"
+    pillarJustification:
+      type: string
+      description: "Why this signal maps to this specific pillar, citing strategy data"
+    timeliness:
+      type: string
+      enum:
+        - timely
+        - evergreen
+    timelinessReason:
+      type: string
+      description: "Why this is timely or evergreen"
+    strategyRelevance:
+      type: integer
+      minimum: 1
+      maximum: 10
+    relevanceEvidence:
+      type: string
+      description: "Specific strategy data points justifying the relevance score"
+    icpAlignment:
+      type: string
+      description: "Which ICP segment(s) this signal is most relevant to and why"
+    contradictions:
+      type: array
+      items:
+        type: object
+        properties:
+          position:
+            type: string
+            description: "The strategy position or published content this contradicts"
+          explanation:
+            type: string
+            description: "How and why the contradiction exists"
+    routing:
+      type: string
+      enum:
+        - strategy_update
+        - content_seed
+        - campaign_fuel
+        - archive
+    routingJustification:
+      type: string
+      description: "Evidence-based explanation for the routing decision"
+    strategyUpdateProposed:
+      type: object
+      description: "Required if routing is strategy_update"
+      properties:
+        section:
+          type: string
+          description: "Which strategy section should be updated"
+        currentPosition:
+          type: string
+          description: "What the strategy currently says"
+        proposedChange:
+          type: string
+          description: "The specific change proposed"
+        evidence:
+          type: string
+          description: "Why this change is warranted based on the signal"
+    patternNotes:
+      type: string
+      description: "Any patterns detected when comparing to recent signals"

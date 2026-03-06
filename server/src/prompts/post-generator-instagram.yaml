@@ -1,0 +1,201 @@
+name: "post-generator-instagram"
+version: "1.0"
+description: "Generates Instagram posts with captions, format selection, story companions, and audio mood suggestions, grounded in strategy and author voice."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 3000
+temperature: 0.7
+system_prompt: |
+  You are an expert Instagram content creator for MerakiPeople. You generate high-performing Instagram content that is grounded in the client's strategy, written in their authentic voice, and optimized for the Instagram algorithm.
+
+  Content rules:
+    - Every post must serve a specific content pillar from the strategy.
+    - Caption should be 80-160 words. Front-load value — the first line is your hook before the "more" truncation.
+    - The first line hook must be compelling enough to make users tap "more." It should be a bold statement, question, or micro-story opener.
+    - Format selection:
+      - single_image: Strong visual statements, quotes, single insights.
+      - carousel: Frameworks, tutorials, before/after, myth-busting. 5-10 slides optimal.
+      - reel: Trending audio opportunities, quick tips, behind-the-scenes, hot takes. 15-60 seconds.
+      - story_series: Multi-part narratives, polls, Q&A sequences, day-in-the-life.
+    - Hashtags: 5-15, mix of niche (<100K posts), medium (100K-1M), and broad (1M+). Place in caption body or first comment.
+    - If this is a carousel, provide a complete slide-by-slide outline.
+    - If this is a reel, provide a script outline with timing.
+    - Story companion: If the post format is single_image or carousel, suggest a story companion that drives traffic to the post.
+    - Suggested audio mood: For reels, suggest an audio mood/vibe rather than specific songs (e.g., "upbeat motivational," "lo-fi ambient," "trending pop with build-up").
+
+  Voice rules:
+    - Write in the author's documented voice. Instagram allows slightly more casual than LinkedIn.
+    - Use line breaks strategically for readability.
+    - Emoji usage should match the author's voice profile — some authors use them heavily, others rarely.
+    - Never use banned phrases from their voice profile.
+
+  Evidence rules:
+    - Every claim in the caption must be traceable to the strategy document, a signal feed entry, or performance data.
+    - The evidence object must map each key claim to its source.
+    - Never make up data points.
+
+  Brand visual guidelines for image prompts:
+    - Deep navy #152B68 background
+    - Warm coral #FF6F61 accents
+    - Outfit font style
+    - No stock photography
+    - No human faces
+    - Geometric and abstract elements
+    - Clean editorial aesthetic
+    - Instagram-optimized aspect ratios: 1:1 for feed, 4:5 for maximum feed real estate, 9:16 for stories and reels
+
+  Critique integration:
+    - If PREVIOUS_FEEDBACK is present, address every point of feedback.
+    - Explain how each piece of feedback was incorporated.
+
+user_prompt: |
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Author voice profile:
+  {{AUTHOR_VOICE}}
+
+  Campaign context (if active):
+  {{CAMPAIGN_CONTEXT}}
+
+  Performance context (recent post performance):
+  {{PERFORMANCE_CONTEXT}}
+
+  Signal feed entry (content seed):
+  {{SIGNAL_FEED_ENTRY}}
+
+  Previous critique feedback (if iterating):
+  {{PREVIOUS_FEEDBACK}}
+
+  Generate an Instagram post based on this signal feed entry, aligned with the strategy and written in the author's voice. Optimize for Instagram's algorithm and engagement patterns. Provide evidence for every key claim.
+
+evidence_requirements:
+  - "Every claim must cite its source: strategy document, signal feed entry, or performance data"
+  - "Hook must connect to a specific ICP pain point or interest documented in the strategy"
+  - "Format selection must be justified by performance data or content type fit"
+  - "Hashtag strategy must reflect a mix of reach tiers"
+  - "If iterating on feedback, must explicitly address each critique point"
+
+output_schema:
+  type: object
+  properties:
+    hook:
+      type: string
+      description: "The first line of the caption — must compel users to tap 'more'"
+    caption:
+      type: string
+      description: "The full caption, 80-160 words, formatted for Instagram readability"
+    format:
+      type: string
+      enum:
+        - single_image
+        - carousel
+        - reel
+        - story_series
+    pillar:
+      type: string
+      description: "Which strategy content pillar this post serves"
+    hashtags:
+      type: array
+      items:
+        type: string
+      description: "5-15 relevant hashtags with reach tier mix"
+    carouselOutline:
+      type: array
+      items:
+        type: object
+        properties:
+          slideNumber:
+            type: integer
+          headline:
+            type: string
+          bodyText:
+            type: string
+          visualDirection:
+            type: string
+      description: "Required if format is carousel. Complete slide-by-slide outline."
+    reelScript:
+      type: object
+      properties:
+        totalDuration:
+          type: string
+          description: "Target duration in seconds"
+        scenes:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+              action:
+                type: string
+              dialogue:
+                type: string
+              textOverlay:
+                type: string
+      description: "Required if format is reel. Script with timing."
+    storyCompanion:
+      type: object
+      properties:
+        storyCount:
+          type: integer
+          description: "Number of story frames"
+        frames:
+          type: array
+          items:
+            type: object
+            properties:
+              frameNumber:
+                type: integer
+              content:
+                type: string
+              interactiveElement:
+                type: string
+                description: "poll, question, quiz, slider, or link sticker"
+              visualDirection:
+                type: string
+      description: "Story companion to drive traffic to the main post"
+    suggestedAudioMood:
+      type: string
+      description: "Audio mood/vibe for reels (e.g., 'upbeat motivational', 'lo-fi ambient')"
+    imagePrompt:
+      type: string
+      description: "Brand-consistent image generation prompt using #152B68 deep navy background and #FF6F61 warm coral accents, Outfit font style, no stock photography, no human faces, geometric elements, editorial aesthetic. Instagram-optimized aspect ratio."
+    estimatedEngagement:
+      type: object
+      properties:
+        saves:
+          type: string
+        comments:
+          type: string
+        shares:
+          type: string
+        reach:
+          type: string
+    evidence:
+      type: object
+      properties:
+        claims:
+          type: array
+          items:
+            type: object
+            properties:
+              claim:
+                type: string
+              source:
+                type: string
+              reference:
+                type: string
+        hookJustification:
+          type: string
+        formatJustification:
+          type: string
+    feedbackAddressed:
+      type: array
+      items:
+        type: object
+        properties:
+          feedbackPoint:
+            type: string
+          howAddressed:
+            type: string
+      description: "Required if PREVIOUS_FEEDBACK was provided"

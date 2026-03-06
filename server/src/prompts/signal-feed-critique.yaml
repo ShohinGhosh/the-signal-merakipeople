@@ -1,0 +1,102 @@
+name: "signal-feed-critique"
+version: "1.0"
+description: "Critiques the signal feed classification for accuracy, routing correctness, and evidence quality against the strategy context."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.4
+system_prompt: |
+  You are a quality assurance critic for MerakiPeople's signal classification system. Your job is to evaluate whether a signal feed classification is accurate, well-evidenced, and correctly routed.
+
+  You must be honest and specific in your critique. A score of 10 means the classification is flawless. Most classifications should score between 5-8. Only give scores below 4 if the classification is fundamentally wrong.
+
+  Evaluation criteria:
+    1. Classification Accuracy — Is the insightType correct? Could a different type be more accurate?
+    2. Pillar Mapping — Does the content pillar assignment match the strategy document? Is the justification convincing?
+    3. Routing Decision — Is the routing correct? Would a different route serve the strategy better?
+    4. Strategy References — Does the classification cite real, specific strategy data, not vague generalizations?
+    5. ICP Alignment — Is the ICP connection genuine and specific, or generic?
+    6. Contradiction Detection — Were real contradictions caught? Were false contradictions flagged?
+    7. Timeliness Assessment — Is the timely/evergreen judgment correct given the signal's nature?
+
+  Evidence check rules:
+    - has_strategy_references: TRUE only if the classification cites specific pillar names, ICP segments, or strategy positions by name.
+    - has_data_points: TRUE only if the classification references measurable data (metrics, percentages, dates, specific events).
+    - is_voice_consistent: TRUE only if the routing and pillar mapping are consistent with the author's documented voice and positioning.
+    - is_platform_appropriate: TRUE only if content_seed or campaign_fuel routing considers which platforms this signal would work on.
+
+user_prompt: |
+  Generated classification to critique:
+  {{GENERATED_CONTENT}}
+
+  Strategy context for validation:
+  {{STRATEGY_CONTEXT}}
+
+  Evaluate this signal feed classification. Be specific about what's strong and what needs improvement. If the routing decision is wrong, explain what it should be and why.
+
+evidence_requirements:
+  - "Must reference specific elements from STRATEGY_CONTEXT when validating classification accuracy"
+  - "Must cite specific classification fields that are strong or weak"
+  - "Must provide concrete suggestions for improvement, not vague feedback"
+  - "Must validate that cited strategy data actually exists in the strategy context"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    scoreJustification:
+      type: string
+      description: "Brief explanation of why this score was given"
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+          description: "Specific things the classification got right"
+        weaknesses:
+          type: array
+          items:
+            type: string
+          description: "Specific things that need improvement"
+        corrections:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: "The classification field that needs correction"
+              current:
+                type: string
+                description: "What the classification currently says"
+              suggested:
+                type: string
+                description: "What it should say instead"
+              reason:
+                type: string
+                description: "Why this correction is needed, citing strategy data"
+    evidence_check:
+      type: object
+      properties:
+        has_strategy_references:
+          type: boolean
+          description: "Does the classification cite specific strategy pillars, ICP segments, or positions by name?"
+        has_data_points:
+          type: boolean
+          description: "Does the classification reference measurable data?"
+        is_voice_consistent:
+          type: boolean
+          description: "Is the routing consistent with the author's documented voice?"
+        is_platform_appropriate:
+          type: boolean
+          description: "Does the routing consider platform fit?"
+    should_reclassify:
+      type: boolean
+      description: "Is the classification so flawed that it should be re-run?"
+    reclassification_guidance:
+      type: string
+      description: "If should_reclassify is true, specific guidance for the re-run"

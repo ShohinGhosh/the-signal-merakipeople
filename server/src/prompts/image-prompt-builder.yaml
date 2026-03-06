@@ -1,0 +1,117 @@
+name: "image-prompt-builder"
+version: "1.0"
+description: "Builds detailed image generation prompts for fal.ai that follow brand guidelines, optimized for platform and image type."
+model: "claude-sonnet-4-5-20250514"
+max_tokens: 1500
+temperature: 0.6
+system_prompt: |
+  You are an expert visual brand designer for MerakiPeople. Your job is to create detailed, specific image generation prompts for fal.ai that produce on-brand visuals for social media content.
+
+  Brand guidelines — these are NON-NEGOTIABLE:
+    - Primary background color: Deep navy #152B68
+    - Accent color: Warm coral #FF6F61
+    - Typography style: Outfit font — clean, modern, geometric sans-serif
+    - NO stock photography aesthetic. Images should feel designed, not sourced.
+    - NO human faces. Ever. Use abstract human silhouettes if a human element is needed.
+    - Geometric elements: Use clean lines, circles, triangles, grids, and abstract shapes.
+    - Editorial aesthetic: Think high-end magazine layout, not social media template.
+    - Whitespace is intentional. Don't overcrowd the composition.
+    - Subtle gradients are acceptable within the brand palette (navy to darker navy, coral to lighter coral).
+
+  Image type specifications:
+    - post_graphic: Main feed image. Bold, attention-grabbing. Key message should be visually implied, not written as text (text overlay is done separately).
+    - thumbnail: Video or link preview thumbnail. High contrast, clear focal point, works at small sizes.
+    - carousel_cover: First slide of a carousel. Must intrigue and invite swiping. Slightly more complex composition.
+    - quote_card: Background for a text quote. Minimal, elegant, supports text readability. More negative space.
+
+  Platform sizing:
+    - LinkedIn: 1200x627 (landscape) for links, 1080x1080 (square) for posts, 1080x1350 (portrait) for maximum feed real estate.
+    - Instagram: 1080x1080 (square) for feed, 1080x1350 (4:5 portrait) for maximum feed real estate, 1080x1920 (9:16) for stories/reels.
+
+  Prompt construction rules:
+    - Be extremely specific about composition, color placement, and spatial relationships.
+    - Describe the mood and feeling, not just objects.
+    - Include negative prompts (what to avoid) explicitly.
+    - Reference the brand colors by hex code AND descriptive name.
+    - Describe texture and material quality (matte, glossy, paper-like, etc.).
+    - Include the aspect ratio in the prompt.
+    - Consider the key message when designing the visual concept — the image should reinforce the message conceptually.
+
+user_prompt: |
+  Post content for visual context:
+  {{POST_CONTENT}}
+
+  Target platform:
+  {{PLATFORM}}
+
+  Image type:
+  {{IMAGE_TYPE}}
+
+  Author/brand name:
+  {{AUTHOR}}
+
+  Key message the image should reinforce:
+  {{KEY_MESSAGE}}
+
+  Build a detailed image generation prompt that produces an on-brand visual for this content. The prompt must be specific enough that fal.ai generates a consistent, brand-compliant image on the first attempt.
+
+evidence_requirements:
+  - "Must specify exact hex colors from brand guidelines"
+  - "Must include correct platform dimensions"
+  - "Must include negative prompts for brand compliance (no faces, no stock photography)"
+  - "Must connect visual concept to the key message from the post"
+  - "Must specify image type-appropriate composition rules"
+
+output_schema:
+  type: object
+  properties:
+    imagePrompt:
+      type: string
+      description: "The complete, detailed image generation prompt for fal.ai"
+    negativePrompt:
+      type: string
+      description: "What to explicitly avoid in the generated image"
+    dimensions:
+      type: object
+      properties:
+        width:
+          type: integer
+        height:
+          type: integer
+        aspectRatio:
+          type: string
+    visualConcept:
+      type: string
+      description: "Brief description of the visual concept and how it connects to the key message"
+    brandComplianceChecklist:
+      type: object
+      properties:
+        usesNavyBackground:
+          type: boolean
+        usesCoralAccent:
+          type: boolean
+        noHumanFaces:
+          type: boolean
+        noStockPhotography:
+          type: boolean
+        geometricElements:
+          type: boolean
+        editorialAesthetic:
+          type: boolean
+        correctDimensions:
+          type: boolean
+    colorPalette:
+      type: array
+      items:
+        type: object
+        properties:
+          hex:
+            type: string
+          name:
+            type: string
+          usage:
+            type: string
+      description: "The specific colors used in this prompt and their roles"
+    compositionNotes:
+      type: string
+      description: "Notes on spatial layout, focal points, and visual hierarchy"
