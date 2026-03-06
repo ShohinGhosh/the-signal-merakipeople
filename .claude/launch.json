@@ -2,15 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "api-server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:server"],
-      "port": 5000
-    },
-    {
       "name": "client-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:client"],
+      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+      "runtimeArgs": ["client/dev.js"],
       "port": 3000
     }
   ]
