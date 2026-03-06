@@ -1,4 +1,8 @@
 import { Router, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { User } from '../models/User';
+import { env } from '../config/env';
 import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
@@ -28,7 +32,7 @@ const router = Router();
  *               password:
  *                 type: string
  *                 format: password
- *                 example: password123
+ *                 example: shohini123
  *     responses:
  *       200:
  *         description: Login successful
@@ -39,59 +43,63 @@ const router = Router();
  *               properties:
  *                 token:
  *                   type: string
- *                   description: JWT authentication token
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
  *                 user:
  *                   type: object
  *                   properties:
  *                     id:
  *                       type: string
- *                       example: 507f1f77bcf86cd799439011
  *                     name:
  *                       type: string
- *                       example: Shohini
+ *                     email:
+ *                       type: string
  *                     role:
  *                       type: string
  *                       enum: [shohini, sanjoy]
- *                       example: shohini
  *       400:
  *         description: Missing email or password
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: Email and password are required
  *       401:
  *         description: Invalid credentials
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: Invalid email or password
  */
-router.post('/login', (req: Request, res: Response) => {
-  const { email, password } = req.body;
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    res.status(400).json({ error: 'Email and password are required' });
-    return;
+    if (!email || !password) {
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString(), role: user.role, name: user.name },
+      env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
   }
-
-  // TODO: Replace with real User lookup + bcrypt compare + JWT sign
-  res.json({
-    token: 'mock-jwt-token',
-    user: {
-      id: '507f1f77bcf86cd799439011',
-      name: 'Shohini',
-      role: 'shohini',
-    },
-  });
 });
 
 /**
@@ -101,40 +109,13 @@ router.post('/login', (req: Request, res: Response) => {
  *     tags:
  *       - Auth
  *     summary: Get current authenticated user
- *     description: Returns the user profile decoded from the JWT token.
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Current user profile
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 user:
- *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                       example: 507f1f77bcf86cd799439011
- *                     name:
- *                       type: string
- *                       example: Shohini
- *                     role:
- *                       type: string
- *                       enum: [shohini, sanjoy]
- *                       example: shohini
  *       401:
- *         description: Unauthorized — missing or invalid token
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: No token provided
+ *         description: Unauthorized
  */
 router.get('/me', authMiddleware, (req: Request, res: Response) => {
   res.json({ user: req.user });

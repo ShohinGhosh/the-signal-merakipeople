@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { Strategy } from '../models/Strategy';
 
 const router = Router();
 
@@ -149,31 +150,25 @@ router.use(authMiddleware);
  *                   type: string
  *                   example: No current strategy found
  */
-router.get('/current', (req: Request, res: Response) => {
-  // TODO: Replace with Strategy.findOne({ isCurrent: true })
-  res.json({
-    _id: '507f1f77bcf86cd799439011',
-    version: 1,
-    northStar: '',
-    goal90Day: '',
-    icpPrimary: {},
-    icpSecondary: {},
-    antiIcp: '',
-    positioningStatement: '',
-    contentPillars: [],
-    voiceShohini: '',
-    voiceSanjoy: '',
-    sharedTone: '',
-    bannedPhrases: [],
-    platformStrategy: [],
-    keyMessages: [],
-    metricsTargets: {},
-    isCurrent: true,
-    isComplete: false,
-    onboardingProgress: { currentSection: 0, totalSections: 5, completedSections: [] },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+router.get('/current', async (req: Request, res: Response) => {
+  try {
+    let strategy = await Strategy.findOne({ isCurrent: true });
+
+    if (!strategy) {
+      // Auto-create an empty strategy for first-time setup
+      strategy = await Strategy.create({
+        version: 1,
+        isCurrent: true,
+        isComplete: false,
+        onboardingProgress: { currentSection: 0, totalSections: 5, completedSections: [] },
+      });
+    }
+
+    res.json(strategy);
+  } catch (err) {
+    console.error('Get current strategy error:', err);
+    res.status(500).json({ error: 'Failed to fetch strategy' });
+  }
 });
 
 /**
@@ -246,7 +241,7 @@ router.get('/current', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Section number and answers are required
  */
-router.post('/onboarding', (req: Request, res: Response) => {
+router.post('/onboarding', async (req: Request, res: Response) => {
   const { section, answers } = req.body;
 
   if (section === undefined || !answers) {
@@ -254,16 +249,79 @@ router.post('/onboarding', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with AI processing via orchestrator + Strategy update
-  res.json({
-    message: `Section ${section} processed successfully`,
-    extractedData: {},
-    onboardingProgress: {
-      currentSection: section + 1,
-      totalSections: 5,
-      completedSections: Array.from({ length: section }, (_, i) => `section_${i + 1}`),
-    },
-  });
+  try {
+    let strategy = await Strategy.findOne({ isCurrent: true });
+    if (!strategy) {
+      strategy = await Strategy.create({
+        version: 1,
+        isCurrent: true,
+        isComplete: false,
+        onboardingProgress: { currentSection: 0, totalSections: 5, completedSections: [] },
+      });
+    }
+
+    // Map section answers to strategy fields
+    const sectionKey = `section_${section}`;
+    const sectionMap: Record<number, Record<string, any>> = {
+      1: {
+        northStar: answers.northStar || answers.companyDescription || '',
+        goal90Day: answers.goal90Day || answers.targetMarket || '',
+        positioningStatement: answers.uniqueValue || answers.positioningStatement || '',
+      },
+      2: {
+        icpPrimary: answers.icpPrimary || { description: answers.targetAudience || '' },
+        icpSecondary: answers.icpSecondary || {},
+        antiIcp: answers.antiIcp || '',
+      },
+      3: {
+        contentPillars: answers.contentPillars || [],
+        keyMessages: answers.keyMessages || [],
+      },
+      4: {
+        voiceShohini: answers.voiceShohini || '',
+        voiceSanjoy: answers.voiceSanjoy || '',
+        sharedTone: answers.sharedTone || '',
+        bannedPhrases: answers.bannedPhrases || [],
+      },
+      5: {
+        platformStrategy: answers.platformStrategy || [],
+        metricsTargets: answers.metricsTargets || {},
+      },
+    };
+
+    const fieldsToUpdate = sectionMap[section] || {};
+    const completedSections = [...(strategy.onboardingProgress?.completedSections || [])];
+    if (!completedSections.includes(sectionKey)) {
+      completedSections.push(sectionKey);
+    }
+
+    const nextSection = Math.min(section + 1, 5);
+    const isComplete = completedSections.length >= 5;
+
+    await Strategy.findByIdAndUpdate(strategy._id, {
+      ...fieldsToUpdate,
+      isComplete,
+      onboardingProgress: {
+        currentSection: isComplete ? 5 : nextSection,
+        totalSections: 5,
+        completedSections,
+      },
+      updatedBy: req.user?.name || 'unknown',
+    });
+
+    res.json({
+      message: `Section ${section} processed successfully`,
+      extractedData: fieldsToUpdate,
+      onboardingProgress: {
+        currentSection: isComplete ? 5 : nextSection,
+        totalSections: 5,
+        completedSections,
+      },
+    });
+  } catch (err) {
+    console.error('Onboarding error:', err);
+    res.status(500).json({ error: 'Failed to process onboarding section' });
+  }
 });
 
 /**
@@ -351,7 +409,7 @@ router.post('/onboarding', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Strategy not found
  */
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { fields, reason } = req.body;
 
@@ -360,17 +418,36 @@ router.put('/:id', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with Strategy clone + version increment + save
-  res.json({
-    message: 'Strategy updated to version 2',
-    strategy: {
-      _id: 'new-strategy-id',
-      version: 2,
+  try {
+    const existing = await Strategy.findById(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Strategy not found' });
+      return;
+    }
+
+    // Mark old version as not current
+    await Strategy.findByIdAndUpdate(id, { isCurrent: false });
+
+    // Create new version
+    const newData = existing.toObject();
+    delete (newData as any)._id;
+    const newStrategy = await Strategy.create({
+      ...newData,
+      ...fields,
+      version: existing.version + 1,
       isCurrent: true,
       updateReason: reason,
       updatedBy: req.user?.name || 'unknown',
-    },
-  });
+    });
+
+    res.json({
+      message: `Strategy updated to version ${newStrategy.version}`,
+      strategy: newStrategy,
+    });
+  } catch (err) {
+    console.error('Strategy update error:', err);
+    res.status(500).json({ error: 'Failed to update strategy' });
+  }
 });
 
 /**
@@ -411,19 +488,14 @@ router.put('/:id', (req: Request, res: Response) => {
  *                       isCurrent:
  *                         type: boolean
  */
-router.get('/versions', (req: Request, res: Response) => {
-  // TODO: Replace with Strategy.find({}, 'version updatedAt updateReason isCurrent').sort({ version: -1 })
-  res.json({
-    versions: [
-      {
-        _id: '507f1f77bcf86cd799439011',
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        updateReason: 'Initial strategy',
-        isCurrent: true,
-      },
-    ],
-  });
+router.get('/versions', async (req: Request, res: Response) => {
+  try {
+    const versions = await Strategy.find({}, 'version updatedAt updateReason isCurrent').sort({ version: -1 });
+    res.json({ versions });
+  } catch (err) {
+    console.error('Get versions error:', err);
+    res.status(500).json({ error: 'Failed to fetch versions' });
+  }
 });
 
 /**
