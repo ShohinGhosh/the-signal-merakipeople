@@ -1,8 +1,10 @@
-import { CostLog, CLAUDE_PRICING } from '../../models/CostLog';
+import { CostLog, AI_PRICING, CLAUDE_PRICING } from '../../models/CostLog';
+import type { AIProvider } from './aiClient';
 
 export interface CostEntry {
   operation: string;
   model: string;
+  provider?: AIProvider;
   inputTokens: number;
   outputTokens: number;
   iteration: number;
@@ -17,12 +19,13 @@ export interface CostEntry {
 
 /**
  * Calculates USD cost from token counts based on model pricing.
+ * Supports both Claude and Gemini models.
  */
 export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = (CLAUDE_PRICING as Record<string, { input: number; output: number }>)[model];
+  const pricing = AI_PRICING[model];
 
   if (!pricing) {
-    // Fallback to sonnet pricing
+    // Fallback to cheapest Claude pricing for unknown models
     const fallback = CLAUDE_PRICING['claude-sonnet-4-5'];
     return (inputTokens / 1_000_000) * fallback.input + (outputTokens / 1_000_000) * fallback.output;
   }
@@ -39,7 +42,8 @@ export async function logCost(entry: CostEntry): Promise<void> {
   await CostLog.create({
     timestamp: new Date(),
     operation: entry.operation,
-    model: entry.model,
+    aiModel: entry.model,
+    provider: entry.provider || 'claude',
     inputTokens: entry.inputTokens,
     outputTokens: entry.outputTokens,
     costUsd,
@@ -68,13 +72,21 @@ export async function getCostSummary(startDate: Date, endDate: Date) {
   const totalCalls = logs.length;
 
   const byOperation: Record<string, { calls: number; cost: number }> = {};
+  const byProvider: Record<string, { calls: number; cost: number }> = {};
   for (const log of logs) {
     if (!byOperation[log.operation]) {
       byOperation[log.operation] = { calls: 0, cost: 0 };
     }
     byOperation[log.operation].calls++;
     byOperation[log.operation].cost += log.costUsd;
+
+    const prov = log.provider || 'claude';
+    if (!byProvider[prov]) {
+      byProvider[prov] = { calls: 0, cost: 0 };
+    }
+    byProvider[prov].calls++;
+    byProvider[prov].cost += log.costUsd;
   }
 
-  return { totalCost, totalInputTokens, totalOutputTokens, totalCalls, byOperation };
+  return { totalCost, totalInputTokens, totalOutputTokens, totalCalls, byOperation, byProvider };
 }

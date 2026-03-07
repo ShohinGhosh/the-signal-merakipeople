@@ -1,0 +1,27 @@
+services:
+  signal-api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: signal-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb+srv://ishwari:Ganesh%4024@testdb.a204r.mongodb.net/the-signal
+      - JWT_SECRET=${JWT_SECRET:-the-signal-jwt-secret-2024}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - FAL_KEY=${FAL_KEY:-}
+      - PORT=5000
+      - NODE_ENV=production
+
+  signal-client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: signal-client
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      - signal-api

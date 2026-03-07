@@ -1,0 +1,31 @@
+services:
+  signal-api:
+    image: the-signal-signal-api:latest
+    container_name: signal-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb+srv://ishwari:Ganesh%4024@testdb.a204r.mongodb.net/the-signal
+      - JWT_SECRET=${JWT_SECRET:-the-signal-jwt-secret-prod-2024}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - FAL_KEY=${FAL_KEY:-}
+      - PORT=5000
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  signal-client:
+    image: the-signal-signal-client:latest
+    container_name: signal-client
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      - signal-api
+    deploy:
+      resources:
+        limits:
+          memory: 50M

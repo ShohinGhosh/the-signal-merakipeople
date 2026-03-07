@@ -25,7 +25,9 @@ export default function StrategyPage() {
     if (!isComplete) setOnboarding(true);
     if (strategy?.onboardingProgress?.completedSections) {
       setCompletedSections(
-        strategy.onboardingProgress.completedSections.map((s) => parseInt(s))
+        strategy.onboardingProgress.completedSections
+          .map((s) => parseInt(s.replace('section_', ''), 10))
+          .filter((n) => !isNaN(n))
       );
       setCurrentSection(strategy.onboardingProgress.currentSection || 1);
     }
@@ -157,15 +159,51 @@ export default function StrategyPage() {
         <StrategySection
           title="Ideal Customer Profile"
           content={
-            <div className="space-y-2">
-              <div>
-                <span className="text-white/50 text-xs uppercase">Primary:</span>
-                <p className="text-sm">{JSON.stringify(strategy.icpPrimary)}</p>
-              </div>
-              <div>
-                <span className="text-white/50 text-xs uppercase">Anti-ICP:</span>
-                <p className="text-sm">{strategy.antiIcp}</p>
-              </div>
+            <div className="space-y-3">
+              {strategy.icpPrimary && Object.keys(strategy.icpPrimary).length > 0 && (
+                <div>
+                  <span className="text-white/50 text-xs uppercase block mb-1">Primary:</span>
+                  {strategy.icpPrimary.description && (
+                    <p className="text-sm text-white/80 mb-2">{strategy.icpPrimary.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {strategy.icpPrimary.industry && (
+                      <span className="text-xs bg-white/10 rounded-full px-3 py-1">Industry: {strategy.icpPrimary.industry}</span>
+                    )}
+                    {strategy.icpPrimary.companySize && (
+                      <span className="text-xs bg-white/10 rounded-full px-3 py-1">Size: {strategy.icpPrimary.companySize}</span>
+                    )}
+                    {strategy.icpPrimary.role && (
+                      <span className="text-xs bg-white/10 rounded-full px-3 py-1">Role: {strategy.icpPrimary.role}</span>
+                    )}
+                  </div>
+                  {strategy.icpPrimary.painPoints?.length > 0 && (
+                    <div className="mt-2">
+                      <span className="text-white/40 text-xs">Pain Points:</span>
+                      <ul className="mt-1 space-y-1">
+                        {strategy.icpPrimary.painPoints.map((p: string, i: number) => (
+                          <li key={i} className="text-sm text-white/70 pl-3 border-l-2 border-brand-coral/30">{p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {strategy.icpSecondary?.description && (
+                <div>
+                  <span className="text-white/50 text-xs uppercase block mb-1">Secondary:</span>
+                  <p className="text-sm text-white/80">{strategy.icpSecondary.description}</p>
+                </div>
+              )}
+              {strategy.antiIcp && (
+                <div>
+                  <span className="text-white/50 text-xs uppercase block mb-1">Anti-ICP:</span>
+                  <p className="text-sm text-white/80">{strategy.antiIcp}</p>
+                </div>
+              )}
+              {!strategy.icpPrimary?.description && !strategy.antiIcp && (
+                <p className="text-sm text-white/40">Not set</p>
+              )}
             </div>
           }
         />
@@ -208,11 +246,115 @@ export default function StrategyPage() {
           }
         />
 
+        {/* Platform Strategy */}
+        {strategy.platformStrategy?.length > 0 && (
+          <StrategySection
+            title="Platform Strategy"
+            content={
+              <div className="space-y-3">
+                {strategy.platformStrategy.map((ps, i) => (
+                  <div key={i} className="bg-white/5 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-sm">{ps.platform}</span>
+                      {ps.weeklyTarget > 0 && (
+                        <span className="text-xs bg-brand-coral/20 text-brand-coral rounded-full px-2 py-0.5">
+                          {ps.weeklyTarget}x/week
+                        </span>
+                      )}
+                    </div>
+                    {ps.primaryPurpose && (
+                      <p className="text-xs text-white/60 mb-1">{ps.primaryPurpose}</p>
+                    )}
+                    {ps.bestFormats?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {ps.bestFormats.map((f, j) => (
+                          <span key={j} className="text-xs bg-white/10 rounded px-2 py-0.5">{f}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            }
+          />
+        )}
+
+        {/* Voice & Tone */}
+        {(strategy.voiceShohini || strategy.voiceSanjoy || strategy.sharedTone) && (
+          <StrategySection
+            title="Voice & Tone"
+            content={
+              <div className="space-y-3">
+                {strategy.voiceShohini && (
+                  <div>
+                    <span className="text-white/50 text-xs uppercase block mb-1">Shohini's Voice:</span>
+                    <p className="text-sm text-white/80">{strategy.voiceShohini}</p>
+                  </div>
+                )}
+                {strategy.voiceSanjoy && (
+                  <div>
+                    <span className="text-white/50 text-xs uppercase block mb-1">Sanjoy's Voice:</span>
+                    <p className="text-sm text-white/80">{strategy.voiceSanjoy}</p>
+                  </div>
+                )}
+                {strategy.sharedTone && (
+                  <div>
+                    <span className="text-white/50 text-xs uppercase block mb-1">Shared Tone:</span>
+                    <p className="text-sm text-white/80">{strategy.sharedTone}</p>
+                  </div>
+                )}
+                {strategy.bannedPhrases?.length > 0 && (
+                  <div>
+                    <span className="text-white/50 text-xs uppercase block mb-1">Banned Phrases:</span>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {strategy.bannedPhrases.map((phrase, i) => (
+                        <span key={i} className="text-xs bg-red-500/20 text-red-300 rounded-full px-3 py-1">
+                          {phrase}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            }
+          />
+        )}
+
         {/* Metrics Targets */}
         <StrategySection
           title="Metrics Targets"
-          content={JSON.stringify(strategy.metricsTargets, null, 2)}
-          mono
+          content={
+            strategy.metricsTargets && Object.values(strategy.metricsTargets).some(v => v != null) ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {strategy.metricsTargets.linkedinFollowers != null && (
+                  <MetricCard label="LinkedIn Followers" value={strategy.metricsTargets.linkedinFollowers.toLocaleString()} />
+                )}
+                {strategy.metricsTargets.linkedinEngagementRate != null && (
+                  <MetricCard label="LinkedIn Engagement" value={`${strategy.metricsTargets.linkedinEngagementRate}%`} />
+                )}
+                {strategy.metricsTargets.linkedinDmsPerWeek != null && (
+                  <MetricCard label="LinkedIn DMs/Week" value={strategy.metricsTargets.linkedinDmsPerWeek.toString()} />
+                )}
+                {strategy.metricsTargets.instagramFollowers != null && (
+                  <MetricCard label="Instagram Followers" value={strategy.metricsTargets.instagramFollowers.toLocaleString()} />
+                )}
+                {strategy.metricsTargets.instagramReach != null && (
+                  <MetricCard label="Instagram Reach" value={strategy.metricsTargets.instagramReach.toLocaleString()} />
+                )}
+                {strategy.metricsTargets.leadsPerMonth != null && (
+                  <MetricCard label="Leads/Month" value={strategy.metricsTargets.leadsPerMonth.toString()} />
+                )}
+                {strategy.metricsTargets.mrrTarget != null && (
+                  <MetricCard label="MRR Target" value={`$${strategy.metricsTargets.mrrTarget.toLocaleString()}`} />
+                )}
+                {strategy.metricsTargets.trainingRevenueTarget != null && (
+                  <MetricCard label="Training Revenue" value={`$${strategy.metricsTargets.trainingRevenueTarget.toLocaleString()}`} />
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-white/40">Not set</p>
+            )
+          }
         />
       </div>
     </div>
@@ -240,6 +382,15 @@ function StrategySection({
       ) : (
         content
       )}
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white/5 rounded-lg p-3 text-center">
+      <div className="text-lg font-bold text-brand-coral">{value}</div>
+      <div className="text-xs text-white/50 mt-1">{label}</div>
     </div>
   );
 }

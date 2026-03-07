@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { Strategy } from '../models/Strategy';
+import { callAI } from '../services/ai/aiClient';
+import { env } from '../config/env';
 
 const router = Router();
 
@@ -249,6 +251,9 @@ router.post('/onboarding', async (req: Request, res: Response) => {
     return;
   }
 
+  // The frontend sends { response: "free text" }
+  const userResponse = answers.response || answers.text || (typeof answers === 'string' ? answers : JSON.stringify(answers));
+
   try {
     let strategy = await Strategy.findOne({ isCurrent: true });
     if (!strategy) {
@@ -260,36 +265,159 @@ router.post('/onboarding', async (req: Request, res: Response) => {
       });
     }
 
-    // Map section answers to strategy fields
     const sectionKey = `section_${section}`;
-    const sectionMap: Record<number, Record<string, any>> = {
+
+    // Section names and extraction schemas
+    const sectionConfig: Record<number, { name: string; schema: string; fallbackMap: (text: string) => Record<string, any> }> = {
       1: {
-        northStar: answers.northStar || answers.companyDescription || '',
-        goal90Day: answers.goal90Day || answers.targetMarket || '',
-        positioningStatement: answers.uniqueValue || answers.positioningStatement || '',
+        name: 'Business Context',
+        schema: `{
+  "northStar": "string - The company's north star / overarching mission or purpose",
+  "positioningStatement": "string - How the company positions itself, its unique value proposition",
+  "icpPrimary": { "description": "string - Primary ideal customer profile description", "industry": "string or null", "companySize": "string or null", "role": "string or null", "painPoints": ["string"] },
+  "icpSecondary": { "description": "string or null - Secondary customer profile if mentioned" },
+  "antiIcp": "string or null - Who they do NOT want to serve"
+}`,
+        fallbackMap: (text: string) => ({
+          northStar: text.substring(0, 500),
+          positioningStatement: '',
+          icpPrimary: { description: text.substring(0, 300) },
+        }),
       },
       2: {
-        icpPrimary: answers.icpPrimary || { description: answers.targetAudience || '' },
-        icpSecondary: answers.icpSecondary || {},
-        antiIcp: answers.antiIcp || '',
+        name: 'Goals & Metrics',
+        schema: `{
+  "goal90Day": "string - The primary 90-day goal",
+  "metricsTargets": {
+    "linkedinFollowers": "number or null",
+    "linkedinEngagementRate": "number or null - as percentage",
+    "linkedinDmsPerWeek": "number or null",
+    "instagramFollowers": "number or null",
+    "instagramReach": "number or null",
+    "leadsPerMonth": "number or null",
+    "demoToCloseRate": "number or null - as percentage",
+    "mrrTarget": "number or null",
+    "trainingRevenueTarget": "number or null"
+  }
+}`,
+        fallbackMap: (text: string) => ({
+          goal90Day: text.substring(0, 500),
+          metricsTargets: {},
+        }),
       },
       3: {
-        contentPillars: answers.contentPillars || [],
-        keyMessages: answers.keyMessages || [],
+        name: 'Current State',
+        schema: `{
+  "contentPillars": [{ "name": "string - pillar topic name", "purpose": "string - why this pillar matters", "targetPercent": "number - percentage of content (all should sum to ~100)", "examplePostTypes": ["string"], "owner": "string - shohini, sanjoy, or both" }],
+  "platformStrategy": [{ "platform": "string - e.g. LinkedIn, Instagram, Twitter", "primaryPurpose": "string", "weeklyTarget": "number - posts per week", "bestFormats": ["string"], "bestPostingTimes": ["string"] }],
+  "keyMessages": ["string - core messages or themes they want to communicate"]
+}`,
+        fallbackMap: (text: string) => ({
+          contentPillars: [],
+          platformStrategy: [],
+          keyMessages: [text.substring(0, 300)],
+        }),
       },
       4: {
-        voiceShohini: answers.voiceShohini || '',
-        voiceSanjoy: answers.voiceSanjoy || '',
-        sharedTone: answers.sharedTone || '',
-        bannedPhrases: answers.bannedPhrases || [],
+        name: 'Voice & Positioning',
+        schema: `{
+  "voiceShohini": "string - Shohini's personal voice/tone description",
+  "voiceSanjoy": "string - Sanjoy's personal voice/tone description",
+  "sharedTone": "string - The shared brand tone they both use",
+  "bannedPhrases": ["string - words or phrases they want to avoid"],
+  "keyMessages": ["string - additional key messages about their voice/positioning"]
+}`,
+        fallbackMap: (text: string) => ({
+          voiceShohini: text.substring(0, 300),
+          voiceSanjoy: '',
+          sharedTone: '',
+          bannedPhrases: [],
+        }),
       },
       5: {
-        platformStrategy: answers.platformStrategy || [],
-        metricsTargets: answers.metricsTargets || {},
+        name: 'Campaigns',
+        schema: `{
+  "keyMessages": ["string - campaign-related key messages or priorities"],
+  "competitiveIntelligence": "string or null - any competitive landscape info mentioned"
+}`,
+        fallbackMap: (text: string) => ({
+          keyMessages: [text.substring(0, 300)],
+          competitiveIntelligence: '',
+        }),
       },
     };
 
-    const fieldsToUpdate = sectionMap[section] || {};
+    const config = sectionConfig[section];
+    if (!config) {
+      res.status(400).json({ error: `Invalid section number: ${section}` });
+      return;
+    }
+
+    let fieldsToUpdate: Record<string, any> = {};
+    let nextQuestion = '';
+
+    // Try AI extraction if any AI key is available
+    let aiProvider: string | undefined;
+    if (env.ANTHROPIC_API_KEY || env.GEMINI_API_KEY) {
+      try {
+        const provider = env.ANTHROPIC_API_KEY ? 'claude' : 'gemini';
+        console.log(`[Onboarding] Using ${provider} AI to extract section ${section} data...`);
+
+        const extractionResult = await callAI({
+          systemPrompt: `You are a strategy data extraction engine for MerakiPeople. Extract structured data from the user's free-text onboarding response. Return ONLY valid JSON, no markdown fences, no commentary.`,
+          userPrompt: `Section ${section}: ${config.name}\n\nUser's response:\n"""\n${userResponse}\n"""\n\nExtract these fields as JSON:\n${config.schema}\n\nReturn ONLY the JSON object. Use null for fields you cannot determine.`,
+          model: 'claude-3-5-sonnet-20241022',
+          maxTokens: 2000,
+          temperature: 0.3,
+          provider: provider as any,
+          enableFallback: true,
+        });
+
+        aiProvider = extractionResult.provider;
+
+        // Parse the AI response
+        let parsed: Record<string, any>;
+        const cleaned = extractionResult.content.trim().replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (parseErr) {
+          console.warn(`[Onboarding] AI response parse failed, using fallback. Response: ${extractionResult.content.substring(0, 200)}`);
+          parsed = config.fallbackMap(userResponse);
+        }
+
+        // Clean nulls — don't overwrite existing data with null
+        for (const [key, value] of Object.entries(parsed)) {
+          if (value !== null && value !== undefined) {
+            fieldsToUpdate[key] = value;
+          }
+        }
+
+        // Also generate a follow-up question for the next section
+        if (section < 5) {
+          const nextConfig = sectionConfig[section + 1];
+          nextQuestion = `Great, I've captured your ${config.name.toLowerCase()} details. Now let's talk about ${nextConfig.name.toLowerCase()} - ${getSectionDescription(section + 1)}`;
+        }
+
+        console.log(`[Onboarding] Extracted ${Object.keys(fieldsToUpdate).length} fields from section ${section} via ${extractionResult.provider}/${extractionResult.model}`);
+      } catch (aiErr) {
+        console.warn(`[Onboarding] AI extraction failed, using fallback:`, aiErr);
+        fieldsToUpdate = config.fallbackMap(userResponse);
+      }
+    } else {
+      // No API key — use simple fallback mapping
+      console.log(`[Onboarding] No AI API key configured, using fallback extraction for section ${section}`);
+      fieldsToUpdate = config.fallbackMap(userResponse);
+    }
+
+    // For section 3 and 5 which may add to keyMessages, merge with existing
+    if ((section === 3 || section === 5) && fieldsToUpdate.keyMessages) {
+      const existing = strategy.keyMessages || [];
+      const newMessages = fieldsToUpdate.keyMessages.filter(
+        (msg: string) => !existing.includes(msg)
+      );
+      fieldsToUpdate.keyMessages = [...existing, ...newMessages];
+    }
+
     const completedSections = [...(strategy.onboardingProgress?.completedSections || [])];
     if (!completedSections.includes(sectionKey)) {
       completedSections.push(sectionKey);
@@ -312,6 +440,12 @@ router.post('/onboarding', async (req: Request, res: Response) => {
     res.json({
       message: `Section ${section} processed successfully`,
       extractedData: fieldsToUpdate,
+      nextQuestion,
+      evidence: {
+        source: 'user_onboarding_response',
+        provider: aiProvider || 'fallback',
+        fieldsExtracted: Object.keys(fieldsToUpdate),
+      },
       onboardingProgress: {
         currentSection: isComplete ? 5 : nextSection,
         totalSections: 5,
@@ -323,6 +457,17 @@ router.post('/onboarding', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to process onboarding section' });
   }
 });
+
+function getSectionDescription(section: number): string {
+  const descriptions: Record<number, string> = {
+    1: 'What MerakiPeople does and who it serves',
+    2: 'What does success look like in 90 days? What KPIs matter most?',
+    3: 'What content have you done before? What platforms are you active on?',
+    4: 'How do you want to sound? What topics do you own?',
+    5: 'Any upcoming launches, events, or campaigns in the next quarter?',
+  };
+  return descriptions[section] || '';
+}
 
 /**
  * @openapi

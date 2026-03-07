@@ -7,6 +7,7 @@ export const env = {
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/the-signal',
   JWT_SECRET: process.env.JWT_SECRET || 'dev-secret-change-in-production',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   FAL_KEY: process.env.FAL_KEY || '',
   PORT: parseInt(process.env.PORT || '5000', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',

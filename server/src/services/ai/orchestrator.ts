@@ -1,6 +1,6 @@
-import { callClaude, ClaudeCallResult } from './claudeClient';
+import { callAI, AICallResult, AIProvider } from './aiClient';
 import { buildPrompt } from './promptManager';
-import { logCost } from './costTracker';
+import { logCost, calculateCost } from './costTracker';
 
 export interface OrchestratorInput {
   /** Name of the generator prompt YAML (without .yaml) */
@@ -21,12 +21,28 @@ export interface OrchestratorInput {
   relatedId?: string;
   /** Related collection name */
   relatedCollection?: string;
+  /** Provider for the generator agent. Default: 'claude' */
+  generatorProvider?: AIProvider;
+  /** Provider for the critique agent. Default: 'gemini' */
+  critiqueProvider?: AIProvider;
 }
 
 export interface CritiqueResult {
   score: number;
   feedback: string;
   passesThreshold: boolean;
+  evidenceCheck: {
+    hasStrategyReferences: boolean;
+    hasDataPoints: boolean;
+    isVoiceConsistent: boolean;
+    isPlatformAppropriate: boolean;
+  };
+}
+
+export interface EvidenceCitations {
+  claims: Array<{ claim: string; source: string; reference: string }>;
+  strategyReferences: string[];
+  dataPoints: string[];
   evidenceCheck: {
     hasStrategyReferences: boolean;
     hasDataPoints: boolean;
@@ -49,30 +65,37 @@ export interface OrchestratorResult {
   totalOutputTokens: number;
   /** Total cost in USD */
   totalCostUsd: number;
+  /** Evidence citations extracted from the AI response */
+  evidence: EvidenceCitations;
+  /** Which providers were used */
+  providers: { generator: AIProvider; critique: AIProvider };
 }
 
 /**
  * The core Agent + Critique loop.
  *
- * 1. Generator agent produces output from the prompt template + context
- * 2. Critique agent evaluates the output against quality criteria
+ * 1. Generator agent (default: Claude) produces output from the prompt template + context
+ * 2. Critique agent (default: Gemini) evaluates the output against quality criteria
  * 3. If critique score < threshold, generator re-runs with critique feedback
  * 4. Repeats up to maxIterations times, then returns the best result
  */
 export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<OrchestratorResult> {
   const maxIterations = input.maxIterations || 3;
   const acceptThreshold = input.acceptThreshold || 8;
+  const generatorProvider = input.generatorProvider || 'claude';
+  const critiqueProvider = input.critiqueProvider || 'gemini';
 
   let bestResult: { content: string; critique: CritiqueResult; score: number } | null = null;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  let totalCostUsd = 0;
   let iterations = 0;
   let previousFeedback = '';
 
   for (let i = 1; i <= maxIterations; i++) {
     iterations = i;
 
-    // --- GENERATOR STEP ---
+    // --- GENERATOR STEP (Claude by default) ---
     const genContext = {
       ...input.context,
       ITERATION: String(i),
@@ -85,20 +108,24 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
     );
 
     const startGen = Date.now();
-    const genResult: ClaudeCallResult = await callClaude({
+    const genResult: AICallResult = await callAI({
       systemPrompt: genSystem,
       userPrompt: genUser,
       model: genTemplate.model,
       maxTokens: genTemplate.max_tokens,
       temperature: genTemplate.temperature,
+      provider: generatorProvider,
+      enableFallback: true,
     });
 
     totalInputTokens += genResult.inputTokens;
     totalOutputTokens += genResult.outputTokens;
+    totalCostUsd += calculateCost(genResult.model, genResult.inputTokens, genResult.outputTokens);
 
     await logCost({
       operation: input.operation,
       model: genResult.model,
+      provider: genResult.provider,
       inputTokens: genResult.inputTokens,
       outputTokens: genResult.outputTokens,
       iteration: i,
@@ -111,7 +138,7 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
       durationMs: Date.now() - startGen,
     });
 
-    // --- CRITIQUE STEP ---
+    // --- CRITIQUE STEP (Gemini by default) ---
     const critiqueContext = {
       ...input.context,
       GENERATED_CONTENT: genResult.content,
@@ -124,20 +151,24 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
     );
 
     const startCrit = Date.now();
-    const critResult: ClaudeCallResult = await callClaude({
+    const critResult: AICallResult = await callAI({
       systemPrompt: critSystem,
       userPrompt: critUser,
       model: critTemplate.model,
       maxTokens: critTemplate.max_tokens,
-      temperature: 0.3, // Lower temperature for more consistent critique
+      temperature: 0.3,
+      provider: critiqueProvider,
+      enableFallback: true,
     });
 
     totalInputTokens += critResult.inputTokens;
     totalOutputTokens += critResult.outputTokens;
+    totalCostUsd += calculateCost(critResult.model, critResult.inputTokens, critResult.outputTokens);
 
     await logCost({
       operation: input.operation,
       model: critResult.model,
+      provider: critResult.provider,
       inputTokens: critResult.inputTokens,
       outputTokens: critResult.outputTokens,
       iteration: i,
@@ -167,10 +198,6 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
     previousFeedback = `Previous attempt scored ${critique.score}/10. Critique feedback: ${critique.feedback}`;
   }
 
-  // Calculate total cost
-  const { calculateCost } = await import('./costTracker');
-  const totalCostUsd = calculateCost('claude-sonnet-4-5', totalInputTokens, totalOutputTokens);
-
   const finalContent = bestResult!.content;
   let parsed: Record<string, any> | null = null;
   try {
@@ -178,6 +205,9 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
   } catch {
     // Content is not JSON, that's fine
   }
+
+  // Extract evidence from the final content and critique
+  const evidence = extractEvidence(finalContent, bestResult!.critique);
 
   return {
     content: finalContent,
@@ -187,16 +217,63 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
     totalInputTokens,
     totalOutputTokens,
     totalCostUsd,
+    evidence,
+    providers: { generator: generatorProvider, critique: critiqueProvider },
+  };
+}
+
+/**
+ * Extracts evidence citations from AI-generated content and critique results.
+ */
+function extractEvidence(content: string, critique: CritiqueResult): EvidenceCitations {
+  let claims: Array<{ claim: string; source: string; reference: string }> = [];
+  const strategyReferences: string[] = [];
+  const dataPoints: string[] = [];
+
+  try {
+    const parsed = JSON.parse(content);
+
+    // Extract from evidence object if present (post generators, outreach drafters)
+    if (parsed.evidence?.claims && Array.isArray(parsed.evidence.claims)) {
+      claims = parsed.evidence.claims;
+    }
+
+    // Extract strategy references from known fields
+    if (parsed.pillar) strategyReferences.push(`contentPillar: ${parsed.pillar}`);
+    if (parsed.evidence?.hookJustification) strategyReferences.push(parsed.evidence.hookJustification);
+    if (parsed.evidence?.ctaJustification) strategyReferences.push(parsed.evidence.ctaJustification);
+    if (parsed.evidence?.pillarJustification) strategyReferences.push(parsed.evidence.pillarJustification);
+    if (parsed.evidence?.formatJustification) strategyReferences.push(parsed.evidence.formatJustification);
+
+    // Collect data points from claims
+    claims.forEach((c) => {
+      if (c.source === 'strategy') strategyReferences.push(c.reference);
+      if (c.source === 'performance' || c.source === 'signal') dataPoints.push(c.reference);
+    });
+
+    // Extract from personalizationEvidence (outreach drafter)
+    if (parsed.personalizationEvidence && Array.isArray(parsed.personalizationEvidence)) {
+      parsed.personalizationEvidence.forEach((pe: any) => {
+        if (pe.source) dataPoints.push(`${pe.element}: ${pe.source}`);
+      });
+    }
+  } catch {
+    // Content is not JSON; evidence cannot be structurally extracted
+  }
+
+  return {
+    claims,
+    strategyReferences,
+    dataPoints,
+    evidenceCheck: critique.evidenceCheck,
   };
 }
 
 /**
  * Parses the critique agent's response into a structured CritiqueResult.
- * Expects JSON output from the critique prompt.
  */
 function parseCritiqueResponse(raw: string): CritiqueResult {
   try {
-    // Try to extract JSON from the response
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -213,7 +290,7 @@ function parseCritiqueResponse(raw: string): CritiqueResult {
       };
     }
   } catch {
-    // Failed to parse, create default
+    // Failed to parse
   }
 
   return {
