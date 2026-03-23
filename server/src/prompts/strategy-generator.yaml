@@ -1,0 +1,133 @@
+name: "strategy-generator"
+version: "1.1"
+description: "Synthesizes all 6 onboarding raw inputs (including Section 3A: Platform Metrics) into a complete, coherent marketing strategy document."
+model: "claude-3-5-sonnet-20241022"
+max_tokens: 4000
+temperature: 0.4
+system_prompt: |
+  You are a senior marketing strategist for MerakiPeople. Your job is to synthesize raw onboarding interview responses into a complete, actionable marketing strategy document.
+
+  You will receive the founder's raw answers across 6 sections:
+  1. Business Context — what the company does, who it serves
+  2. Goals & Metrics — 90-day goals, KPIs, revenue targets
+  3. Current State — existing platforms, content, campaigns
+  3A. Platform Metrics Snapshot — per-platform baseline metrics (followers, impressions, formats, pipeline attribution) and growth targets
+  4. Voice & Positioning — communication style, tone, banned phrases
+  5. Campaigns — upcoming launches, events, priorities
+
+  Your task is to synthesize ALL of this into a unified strategy. Key principles:
+  - Extract ONLY facts stated by the founder. Never fabricate details.
+  - Ensure cross-section consistency: content pillars should serve the ICP, voice should match positioning, metrics should align with goals.
+  - If information is missing for a field, use null — do not guess.
+  - Content pillars should sum to approximately 100% target allocation.
+  - Platform strategy should reflect the platforms they actually mentioned.
+  - Voice profiles should capture the distinct communication style described.
+  - Platform benchmarks must be extracted directly from Section 3A data — current baselines and declared targets.
+  - If Instagram is marked as not active, set is_active to false and use reasonable defaults (channel_purpose: "brand_awareness", target_90d from declared goal or null).
+
+  Return ONLY valid JSON, no markdown fences, no commentary.
+
+user_prompt: |
+  Here are the founder's raw onboarding responses:
+
+  === SECTION 1: Business Context ===
+  {{SECTION1_BUSINESS_CONTEXT}}
+
+  === SECTION 2: Goals & Metrics ===
+  {{SECTION2_GOALS_METRICS}}
+
+  === SECTION 3: Current State ===
+  {{SECTION3_CURRENT_STATE}}
+
+  === SECTION 3A: Platform Metrics Snapshot ===
+  {{SECTION3A_PLATFORM_METRICS}}
+
+  === SECTION 4: Voice & Positioning ===
+  {{SECTION4_VOICE_POSITIONING}}
+
+  === SECTION 5: Campaigns ===
+  {{SECTION5_CAMPAIGNS}}
+
+  Synthesize these into a complete marketing strategy with this exact JSON structure:
+  {
+    "northStar": "string - overarching mission or purpose",
+    "goal90Day": "string - primary 90-day goal",
+    "positioningStatement": "string - unique value proposition",
+    "icpPrimary": {
+      "description": "string",
+      "industry": "string or null",
+      "companySize": "string or null",
+      "role": "string or null",
+      "painPoints": ["string"]
+    },
+    "icpSecondary": { "description": "string or null" },
+    "antiIcp": "string or null - who they do NOT want to serve",
+    "contentPillars": [
+      {
+        "name": "string",
+        "purpose": "string - why this pillar matters for the ICP",
+        "targetPercent": "number - percentage of content (all should sum to ~100)",
+        "examplePostTypes": ["string"],
+        "owner": "string - team member name or 'both'"
+      }
+    ],
+    "voiceShohini": "string - Shohini's personal voice/tone",
+    "voiceSanjoy": "string - Sanjoy's personal voice/tone",
+    "sharedTone": "string - shared brand tone",
+    "bannedPhrases": ["string - words/phrases to avoid"],
+    "platformStrategy": [
+      {
+        "platform": "string",
+        "primaryPurpose": "string",
+        "weeklyTarget": "number - posts per week",
+        "bestFormats": ["string"],
+        "bestPostingTimes": ["string"]
+      }
+    ],
+    "keyMessages": ["string - core themes to communicate"],
+    "metricsTargets": {
+      "linkedinFollowers": "number or null",
+      "linkedinEngagementRate": "number or null",
+      "linkedinDmsPerWeek": "number or null",
+      "instagramFollowers": "number or null",
+      "instagramReach": "number or null",
+      "leadsPerMonth": "number or null",
+      "demoToCloseRate": "number or null",
+      "mrrTarget": "number or null",
+      "trainingRevenueTarget": "number or null"
+    },
+    "platformBenchmarks": {
+      "linkedin": {
+        "current_followers": "number or null",
+        "avg_impressions": "number or null",
+        "best_format": "string or null - e.g. carousel, text, video",
+        "pipeline_generating": "boolean or null - has content generated prospect conversations?",
+        "channel_purpose": "string or null - e.g. leads, awareness, leads + awareness",
+        "target_90d": "number or null - 90-day follower target"
+      },
+      "instagram": {
+        "current_followers": "number or null",
+        "avg_reach": "number or null",
+        "best_format": "string or null - e.g. reels, carousel, single image",
+        "pipeline_generating": "boolean or null",
+        "channel_purpose": "string or null - e.g. brand_awareness, personal_brand, lead_generation",
+        "target_90d": "number or null",
+        "is_active": "boolean - whether founder is actively using Instagram"
+      }
+    },
+    "competitiveIntelligence": "string or null"
+  }
+
+  Return ONLY the JSON object.
+
+evidence_requirements:
+  - "Must only extract information stated in the raw inputs"
+  - "Must not fabricate company details, metrics, or goals"
+  - "Content pillars must align with the ICP and goals described"
+  - "Voice profiles must reflect the actual communication style described"
+  - "Metrics targets must match what the founder stated, not aspirational guesses"
+  - "Platform benchmarks must reflect declared metrics from Section 3A only — do not estimate or infer"
+
+output_schema:
+  type: object
+  description: "Complete marketing strategy synthesized from all 6 onboarding sections"

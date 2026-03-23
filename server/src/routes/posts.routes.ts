@@ -1,5 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { Post } from '../models/Post';
+import { SignalFeed } from '../models/SignalFeed';
+import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
+import { gatherEvidenceContext } from '../services/ai/evidenceEngine';
+import { hasContentFields } from '../services/ai/jsonExtractor';
+import { generateAndStoreImage, isImageGenerationAvailable } from '../services/images/imageService';
 
 const router = Router();
 
@@ -80,53 +86,112 @@ router.use(authMiddleware);
  *                   type: string
  *                   example: triggerType, platform, and author are required
  */
-router.post('/generate', (req: Request, res: Response) => {
-  const { triggerType, platform, author } = req.body;
+router.post('/generate', async (req: Request, res: Response) => {
+  const { triggerType, signalFeedId, platform, pillar, format, campaignId, author } = req.body;
 
   if (!triggerType || !platform || !author) {
     res.status(400).json({ error: 'triggerType, platform, and author are required' });
     return;
   }
 
-  // TODO: Replace with AI post generation via orchestrator
-  res.status(201).json({
-    message: 'Post generated',
-    post: {
-      _id: 'new-post-id',
-      signalFeedId: req.body.signalFeedId || null,
-      campaignId: req.body.campaignId || null,
+  try {
+    // Gather evidence context from strategy, performance, signals, pipeline
+    const evidenceContext = await gatherEvidenceContext(author, campaignId);
+
+    // If triggered by a signal, fetch the signal entry
+    let signal = null;
+    if (triggerType === 'signal_seed' && signalFeedId) {
+      signal = await SignalFeed.findById(signalFeedId);
+    }
+
+    // Choose prompt based on platform
+    const generatorPrompt = platform === 'instagram'
+      ? 'post-generator-instagram'
+      : 'post-generator-linkedin';
+
+    // Run AI agent-critique loop
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt,
+      critiquePrompt: 'post-critique',
+      context: {
+        ...evidenceContext,
+        SIGNAL_TEXT: signal?.rawText || '',
+        PLATFORM: platform,
+        FORMAT: format || 'text_post',
+        CONTENT_PILLAR: pillar || '',
+      },
+      operation: 'generate-post',
+      user: author,
+      relatedCollection: 'Post',
+    });
+
+    // Parse structured output from AI — only use parsed fields if they contain real content
+    const parsed = result.parsed || {};
+    const useParsed = hasContentFields(parsed);
+
+    // Create the post document
+    const post = new Post({
       author,
       platform,
-      format: req.body.format || 'text_post',
-      contentPillar: req.body.pillar || '',
-      draftContent: 'AI-generated draft content will appear here.',
-      draftCarouselOutline: [],
-      finalContent: '',
-      cta: '',
-      hashtags: [],
-      linkedinHook: '',
-      instagramHook: '',
-      imageType: null,
-      imagePrompt: '',
-      imageUrl: '',
-      imageVariations: [],
-      scheduledAt: null,
-      publishedAt: null,
+      format: format || 'text_post',
+      contentPillar: pillar || parsed.pillar || '',
+      draftContent: useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content,
+      linkedinHook: useParsed ? (parsed.linkedinHook || parsed.hook || '') : '',
+      instagramHook: useParsed ? (parsed.instagramHook || parsed.hook || '') : '',
+      cta: useParsed ? (parsed.cta || '') : '',
+      hashtags: useParsed ? (parsed.hashtags || []) : [],
       status: 'draft',
-      performance: null,
-      notes: '',
+      signalFeedId: signalFeedId || null,
+      campaignId: campaignId || null,
       aiEvidence: {
-        strategyReferences: ['northStar', 'contentPillars[0]'],
-        dataPoints: ['Signal feed entry analysis'],
-        signalFeedSources: [],
-        confidenceScore: 0.82,
-        critiqueIterations: 2,
-        finalCritiqueScore: 7.5,
+        strategyReferences: result.evidence.strategyReferences,
+        dataPoints: result.evidence.dataPoints,
+        signalFeedSources: signalFeedId ? [signalFeedId] : [],
+        confidenceScore: result.critique.score / 10,
+        critiqueIterations: result.iterations,
+        finalCritiqueScore: result.critique.score,
       },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  });
+    });
+
+    await post.save();
+
+    res.status(201).json({
+      message: 'Post generated',
+      post,
+    });
+  } catch (error: any) {
+    // If AI fails, still create a basic post so the user can manually edit
+    try {
+      const fallbackPost = new Post({
+        author,
+        platform,
+        format: format || 'text_post',
+        contentPillar: pillar || '',
+        draftContent: '',
+        status: 'draft',
+        signalFeedId: signalFeedId || null,
+        campaignId: campaignId || null,
+        notes: `AI generation failed: ${error.message}. Please write content manually.`,
+        aiEvidence: {
+          strategyReferences: [],
+          dataPoints: [],
+          signalFeedSources: [],
+          confidenceScore: 0,
+          critiqueIterations: 0,
+          finalCritiqueScore: 0,
+        },
+      });
+
+      await fallbackPost.save();
+
+      res.status(201).json({
+        message: 'Post created with empty draft (AI generation failed)',
+        post: fallbackPost,
+      });
+    } catch (saveError: any) {
+      res.status(500).json({ error: `Failed to create post: ${saveError.message}` });
+    }
+  }
 });
 
 /**
@@ -200,7 +265,7 @@ router.post('/generate', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Post not found
  */
-router.post('/:id/regenerate', (req: Request, res: Response) => {
+router.post('/:id/regenerate', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { instruction, field } = req.body;
 
@@ -209,15 +274,67 @@ router.post('/:id/regenerate', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with AI regeneration via orchestrator
-  res.json({
-    message: `Post ${field} regenerated`,
-    post: {
-      _id: id,
-      draftContent: 'Regenerated content based on instruction.',
-      updatedAt: new Date().toISOString(),
-    },
-  });
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    // Gather evidence context
+    const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
+
+    // Choose prompt based on platform
+    const generatorPrompt = post.platform === 'instagram'
+      ? 'post-generator-instagram'
+      : 'post-generator-linkedin';
+
+    // Run AI agent-critique loop with regeneration instruction
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt,
+      critiquePrompt: 'post-critique',
+      context: {
+        ...evidenceContext,
+        SIGNAL_TEXT: '',
+        PLATFORM: post.platform,
+        FORMAT: post.format || 'text_post',
+        CONTENT_PILLAR: post.contentPillar || '',
+        REGENERATION_INSTRUCTION: instruction,
+        CURRENT_CONTENT: post.draftContent || '',
+      },
+      operation: 'regenerate-post',
+      user: post.author,
+      relatedId: id as string,
+      relatedCollection: 'Post',
+    });
+
+    const parsed = result.parsed || {};
+    const useParsed = hasContentFields(parsed);
+
+    // Update the post with new content — only use parsed fields if they contain real content
+    post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+    post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
+    post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
+    post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+    post.hashtags = useParsed ? (parsed.hashtags || post.hashtags) : post.hashtags;
+    post.aiEvidence = {
+      strategyReferences: result.evidence.strategyReferences,
+      dataPoints: result.evidence.dataPoints,
+      signalFeedSources: post.aiEvidence?.signalFeedSources || [],
+      confidenceScore: result.critique.score / 10,
+      critiqueIterations: result.iterations,
+      finalCritiqueScore: result.critique.score,
+    };
+
+    await post.save();
+
+    res.json({
+      message: `Post ${field} regenerated`,
+      post,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: `Regeneration failed: ${error.message}` });
+  }
 });
 
 /**
@@ -293,7 +410,7 @@ router.post('/:id/regenerate', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Post not found
  */
-router.post('/:id/generate-image', (req: Request, res: Response) => {
+router.post('/:id/generate-image', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { imageType, customPrompt } = req.body;
 
@@ -302,12 +419,67 @@ router.post('/:id/generate-image', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with AI image generation
-  res.json({
-    message: 'Image generated',
-    imageUrl: 'https://storage.example.com/images/placeholder.png',
-    imagePrompt: customPrompt || 'AI-generated prompt based on post content and strategy',
-  });
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    // Use orchestrator to generate an image prompt via AI
+    const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
+
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt: 'image-prompt-builder',
+      critiquePrompt: 'image-prompt-critique',
+      context: {
+        ...evidenceContext,
+        POST_CONTENT: post.draftContent || post.finalContent || '',
+        PLATFORM: post.platform,
+        IMAGE_TYPE: imageType,
+        CUSTOM_PROMPT: customPrompt || '',
+        CONTENT_PILLAR: post.contentPillar || '',
+      },
+      operation: 'generate-image-prompt',
+      user: post.author,
+      relatedId: id as string,
+      relatedCollection: 'Post',
+    });
+
+    const parsed = result.parsed || {};
+    const generatedImagePrompt = parsed.imagePrompt || parsed.prompt || result.content;
+
+    // Update post with image type and the AI-generated image prompt
+    post.imageType = imageType;
+    post.imagePrompt = generatedImagePrompt;
+
+    // Generate actual images via fal.ai + upload to S3
+    if (isImageGenerationAvailable()) {
+      try {
+        const imageResult = await generateAndStoreImage(
+          generatedImagePrompt,
+          String(post._id),
+          1
+        );
+        post.imageUrl = imageResult.imageUrl;
+        post.imageVariations = imageResult.imageVariations;
+        console.log(`[generate-image] Image generated for post ${post._id}: ${imageResult.imageUrl}`);
+      } catch (imgErr: any) {
+        console.error(`[generate-image] Image rendering failed, saving prompt only:`, imgErr.message);
+        // Graceful fallback: prompt is saved, image can be retried later
+      }
+    }
+
+    await post.save();
+
+    res.json({
+      message: post.imageUrl ? 'Image generated' : 'Image prompt generated (image rendering unavailable)',
+      imageUrl: post.imageUrl || null,
+      imagePrompt: generatedImagePrompt,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: `Image prompt generation failed: ${error.message}` });
+  }
 });
 
 /**
@@ -389,20 +561,39 @@ router.post('/:id/generate-image', (req: Request, res: Response) => {
  *                       type: number
  *                       example: 3
  */
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
 
-  // TODO: Replace with Post.find() with filters + pagination
-  res.json({
-    posts: [],
-    pagination: {
-      page,
-      limit,
-      total: 0,
-      totalPages: 0,
-    },
-  });
+  try {
+    // Build filter from query params
+    const filter: Record<string, any> = {};
+    if (req.query.author) filter.author = req.query.author;
+    if (req.query.platform) filter.platform = req.query.platform;
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.pillar) filter.contentPillar = req.query.pillar;
+    if (req.query.campaignId) filter.campaignId = req.query.campaignId;
+
+    const [posts, total] = await Promise.all([
+      Post.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Post.countDocuments(filter),
+    ]);
+
+    res.json({
+      posts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to fetch posts: ${error.message}` });
+  }
 });
 
 /**
@@ -441,45 +632,20 @@ router.get('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Post not found
  */
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with Post.findById(id)
-  res.json({
-    _id: id,
-    signalFeedId: null,
-    campaignId: null,
-    author: 'shohini',
-    platform: 'linkedin',
-    format: 'text_post',
-    contentPillar: '',
-    draftContent: 'Mock draft content',
-    draftCarouselOutline: [],
-    finalContent: '',
-    cta: '',
-    hashtags: [],
-    linkedinHook: '',
-    instagramHook: '',
-    imageType: null,
-    imagePrompt: '',
-    imageUrl: '',
-    imageVariations: [],
-    scheduledAt: null,
-    publishedAt: null,
-    status: 'draft',
-    performance: null,
-    notes: '',
-    aiEvidence: {
-      strategyReferences: [],
-      dataPoints: [],
-      signalFeedSources: [],
-      confidenceScore: 0,
-      critiqueIterations: 0,
-      finalCritiqueScore: 0,
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    res.json(post);
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to fetch post: ${error.message}` });
+  }
 });
 
 /**
@@ -553,18 +719,23 @@ router.get('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Post not found
  */
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with Post.findByIdAndUpdate(id, req.body, { new: true })
-  res.json({
-    message: 'Post updated',
-    post: {
-      _id: id,
-      ...req.body,
-      updatedAt: new Date().toISOString(),
-    },
-  });
+  try {
+    const post = await Post.findByIdAndUpdate(id, req.body, { new: true });
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    res.json({
+      message: 'Post updated',
+      post,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to update post: ${error.message}` });
+  }
 });
 
 /**
@@ -617,11 +788,27 @@ router.put('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Post not found
  */
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with Post.findById(id) check status then delete
-  res.json({ message: 'Post deleted' });
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    if (post.status !== 'draft') {
+      res.status(400).json({ error: 'Only draft posts can be deleted' });
+      return;
+    }
+
+    await Post.findByIdAndDelete(id);
+
+    res.json({ message: 'Post deleted' });
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to delete post: ${error.message}` });
+  }
 });
 
 /**

@@ -1,7 +1,7 @@
 name: "outreach-drafter"
 version: "1.0"
 description: "Drafts personalized outreach messages for LinkedIn DMs or email, grounded in lead context, strategy, and campaign objectives."
-model: "claude-sonnet-4-5-20250514"
+model: "claude-3-5-sonnet-20241022"
 max_tokens: 2000
 temperature: 0.7
 system_prompt: |

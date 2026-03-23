@@ -40,14 +40,18 @@ export const authAPI = {
 // ============ Strategy API ============
 export const strategyAPI = {
   getCurrent: () => api.get('/strategy/current'),
-  submitOnboarding: (section: number, answers: Record<string, any>) =>
+  submitOnboarding: (section: number | string, answers: Record<string, any>) =>
     api.post('/strategy/onboarding', { section, answers }),
+  generate: () => api.post('/strategy/generate'),
+  approve: () => api.post('/strategy/approve'),
   update: (id: string, fields: Record<string, any>, reason: string) =>
     api.put(`/strategy/${id}`, { fields, reason }),
   getVersions: () => api.get('/strategy/versions'),
   getRecommendations: () => api.get('/strategy/recommendations'),
   acceptRecommendation: (id: string) =>
     api.post(`/strategy/recommendations/${id}/accept`),
+  extractPlatformMetrics: (imageBase64: string) =>
+    api.post('/strategy/extract-platform-metrics', { image: imageBase64 }),
 };
 
 // ============ Campaign API ============
@@ -62,7 +66,11 @@ export const campaignAPI = {
 export const signalFeedAPI = {
   submit: (data: { rawText: string; author: string; tags: string[]; urlReference?: string }) =>
     api.post('/signal-feed', data),
+  quickAdd: (data: { rawText: string; tags?: string[]; urlReference?: string }) =>
+    api.post('/signal-feed/quick', data),
   list: (params?: Record<string, any>) => api.get('/signal-feed', { params }),
+  weekSummary: (weekStart: string) =>
+    api.get('/signal-feed/week-summary', { params: { weekStart } }),
   get: (id: string) => api.get(`/signal-feed/${id}`),
   confirm: (id: string) => api.put(`/signal-feed/${id}/confirm`),
   override: (id: string, data: { routing: string; campaignId?: string }) =>
@@ -86,10 +94,20 @@ export const postsAPI = {
 export const calendarAPI = {
   get: (params: { view: string; date: string; author?: string }) =>
     api.get('/calendar', { params }),
+  getWeek: (weekStart?: string) =>
+    api.get('/calendar/week', { params: weekStart ? { weekStart } : {} }),
+  generateWeek: (weekStart?: string) =>
+    api.post('/calendar/generate-week', weekStart ? { weekStart } : {}),
+  updateTaskStatus: (postId: string, status: string) =>
+    api.put(`/calendar/task/${postId}/status`, { status }),
   getGaps: () => api.get('/calendar/gaps'),
   getAlignment: () => api.get('/calendar/alignment'),
   reschedule: (postId: string, newDate: string) =>
     api.put('/calendar/reschedule', { postId, newDate }),
+  approveWeek: (weekStart: string) =>
+    api.post('/calendar/approve-week', { weekStart }),
+  approveProgress: (weekStart: string) =>
+    api.get('/calendar/approve-progress', { params: { weekStart } }),
 };
 
 // ============ Pipeline API ============
@@ -110,11 +128,25 @@ export const analyticsAPI = {
   signalScore: () => api.get('/analytics/signal-score'),
   mondayBrief: () => api.get('/analytics/monday-brief'),
   generateWeekly: () => api.post('/analytics/generate-weekly'),
+  weeklyPerformance: () => api.get('/analytics/weekly-performance'),
+  pendingPerformance: () => api.get('/analytics/pending-performance'),
 };
 
 // ============ Costs API ============
 export const costsAPI = {
   list: (params?: Record<string, any>) => api.get('/costs', { params }),
-  summary: (params?: { startDate: string; endDate: string }) =>
+  summary: (params?: { startDate?: string; endDate?: string }) =>
     api.get('/costs/summary', { params }),
+  daily: (params?: { startDate?: string; endDate?: string }) =>
+    api.get('/costs/daily', { params }),
+};
+
+// ============ Automations API ============
+export const automationsAPI = {
+  agents: () => api.get('/automations/agents'),
+  agentStatus: (agentId: string) => api.get(`/automations/agents/${agentId}`),
+  run: (agentId: string) => api.post(`/automations/run/${agentId}`),
+  runs: (params?: { agentId?: string; page?: number; limit?: number }) =>
+    api.get('/automations/runs', { params }),
+  getRun: (runId: string) => api.get(`/automations/runs/${runId}`),
 };

@@ -7,6 +7,8 @@ interface StrategyContextType {
   strategy: Strategy | null;
   loading: boolean;
   isComplete: boolean;
+  allInputsFilled: boolean;
+  hasGeneratedContent: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -38,12 +40,27 @@ export function StrategyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, refresh]);
 
+  const allInputsFilled = !!(
+    strategy?.rawInputs?.section1_businessContext &&
+    strategy?.rawInputs?.section2_goalsMetrics &&
+    strategy?.rawInputs?.section3_currentState &&
+    strategy?.rawInputs?.section3a_platformMetrics &&
+    strategy?.rawInputs?.section4_voicePositioning &&
+    strategy?.rawInputs?.section5_campaigns
+  );
+
+  const hasGeneratedContent = !!(
+    strategy?.northStar || strategy?.goal90Day || strategy?.positioningStatement
+  );
+
   return (
     <StrategyContext.Provider
       value={{
         strategy,
         loading,
         isComplete: strategy?.isComplete ?? false,
+        allInputsFilled,
+        hasGeneratedContent,
         refresh,
       }}
     >

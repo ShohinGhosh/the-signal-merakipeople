@@ -28,6 +28,35 @@ export interface IMetricsTargets {
   trainingRevenueTarget?: number;
 }
 
+export interface IPlatformBenchmarks {
+  linkedin: {
+    current_followers: number | null;
+    avg_impressions: number | null;
+    best_format: string | null;
+    pipeline_generating: boolean | null;
+    channel_purpose: string | null;
+    target_90d: number | null;
+  };
+  instagram: {
+    current_followers: number | null;
+    avg_reach: number | null;
+    best_format: string | null;
+    pipeline_generating: boolean | null;
+    channel_purpose: string | null;
+    target_90d: number | null;
+    is_active: boolean;
+  };
+}
+
+export interface IRawInputs {
+  section1_businessContext: string;
+  section2_goalsMetrics: string;
+  section3_currentState: string;
+  section3a_platformMetrics: string;
+  section4_voicePositioning: string;
+  section5_campaigns: string;
+}
+
 export interface IStrategy extends Document {
   version: number;
   northStar: string;
@@ -46,9 +75,11 @@ export interface IStrategy extends Document {
   objectionContent: Record<string, string>[];
   clientRoster: Record<string, any>[];
   metricsTargets: IMetricsTargets;
+  platformBenchmarks: IPlatformBenchmarks;
   competitiveIntelligence: string;
   isCurrent: boolean;
   isComplete: boolean;
+  rawInputs: IRawInputs;
   onboardingProgress: {
     currentSection: number;
     totalSections: number;
@@ -105,12 +136,21 @@ const StrategySchema = new Schema<IStrategy>(
       mrrTarget: Number,
       trainingRevenueTarget: Number,
     },
+    platformBenchmarks: { type: Schema.Types.Mixed, default: {} },
     competitiveIntelligence: { type: String, default: '' },
     isCurrent: { type: Boolean, default: true },
     isComplete: { type: Boolean, default: false },
+    rawInputs: {
+      section1_businessContext: { type: String, default: '' },
+      section2_goalsMetrics: { type: String, default: '' },
+      section3_currentState: { type: String, default: '' },
+      section3a_platformMetrics: { type: String, default: '' },
+      section4_voicePositioning: { type: String, default: '' },
+      section5_campaigns: { type: String, default: '' },
+    },
     onboardingProgress: {
       currentSection: { type: Number, default: 0 },
-      totalSections: { type: Number, default: 5 },
+      totalSections: { type: Number, default: 6 },
       completedSections: [{ type: String }],
     },
     updatedBy: { type: String, default: '' },

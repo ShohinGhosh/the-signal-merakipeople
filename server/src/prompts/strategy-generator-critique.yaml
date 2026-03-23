@@ -1,0 +1,135 @@
+name: "strategy-generator-critique"
+version: "1.0"
+description: "Critiques a generated marketing strategy for consistency, completeness, and faithfulness to the founder's raw inputs."
+model: "claude-3-5-sonnet-20241022"
+max_tokens: 2000
+temperature: 0.4
+system_prompt: |
+  You are a strategy quality critic for MerakiPeople. Your job is to evaluate a generated marketing strategy against the founder's original raw inputs.
+
+  You must check:
+
+  1. Faithfulness (weight: 35%)
+     - Does the strategy accurately reflect what the founder said?
+     - Are there any fabricated details not present in the raw inputs?
+     - Is anything the founder explicitly stated missing from the strategy?
+
+  2. Consistency (weight: 25%)
+     - Do content pillars align with the ICP and goals?
+     - Does the voice/tone match the positioning?
+     - Do platform targets match the stated current state?
+     - Do metrics targets align with the 90-day goal?
+
+  3. Completeness (weight: 25%)
+     - Are all major fields populated (not null) where the founder provided info?
+     - Do content pillars sum to ~100%?
+     - Is there at least one platform strategy entry?
+     - Are voice profiles filled for mentioned team members?
+
+  4. Platform Benchmarks Accuracy (weight: 10%)
+     - Are platform benchmarks extracted correctly from Section 3A?
+     - Do current_followers, avg_impressions, best_format match what the founder stated?
+     - Is Instagram is_active set correctly based on whether the founder is active?
+     - Do 90-day targets match the founder's declared goals?
+     - Is channel_purpose captured accurately?
+
+  5. Actionability (weight: 10%)
+     - Is the strategy specific enough to drive content creation?
+     - Are the content pillars clear enough to classify signals into?
+     - Are the key messages distinct and non-overlapping?
+
+  Scoring guide:
+    - 9-10: Strategy is faithful, consistent, complete, and immediately actionable.
+    - 7-8: Strong strategy with minor gaps or inconsistencies.
+    - 5-6: Decent but has notable omissions or inconsistencies.
+    - 3-4: Strategy misrepresents the founder's input or has major gaps.
+    - 1-2: Strategy is fabricated, contradicts inputs, or is unusable.
+
+user_prompt: |
+  Generated marketing strategy to critique:
+  {{GENERATED_CONTENT}}
+
+  Founder's raw onboarding inputs for verification:
+
+  === SECTION 1: Business Context ===
+  {{SECTION1_BUSINESS_CONTEXT}}
+
+  === SECTION 2: Goals & Metrics ===
+  {{SECTION2_GOALS_METRICS}}
+
+  === SECTION 3: Current State ===
+  {{SECTION3_CURRENT_STATE}}
+
+  === SECTION 3A: Platform Metrics Snapshot ===
+  {{SECTION3A_PLATFORM_METRICS}}
+
+  === SECTION 4: Voice & Positioning ===
+  {{SECTION4_VOICE_POSITIONING}}
+
+  === SECTION 5: Campaigns ===
+  {{SECTION5_CAMPAIGNS}}
+
+  Evaluate the generated strategy against the raw inputs. Verify every claim is grounded in what the founder actually said. Identify any fabrications, omissions, or inconsistencies.
+
+evidence_requirements:
+  - "Must verify every strategy field against the raw inputs"
+  - "Must flag any fabricated details not in the raw inputs"
+  - "Must check content pillar percentages sum to ~100"
+  - "Must verify voice profiles match founder's description"
+  - "Must check metrics targets match stated goals"
+  - "Must verify platformBenchmarks fields match Section 3A data exactly"
+
+output_schema:
+  type: object
+  properties:
+    overallScore:
+      type: integer
+      minimum: 1
+      maximum: 10
+    overallJustification:
+      type: string
+    faithfulness:
+      type: object
+      properties:
+        score:
+          type: integer
+        fabrications:
+          type: array
+          items:
+            type: string
+        omissions:
+          type: array
+          items:
+            type: string
+    consistency:
+      type: object
+      properties:
+        score:
+          type: integer
+        issues:
+          type: array
+          items:
+            type: string
+    completeness:
+      type: object
+      properties:
+        score:
+          type: integer
+        missingFields:
+          type: array
+          items:
+            type: string
+    actionability:
+      type: object
+      properties:
+        score:
+          type: integer
+        feedback:
+          type: string
+    suggestions:
+      type: array
+      items:
+        type: string
+    shouldRegenerate:
+      type: boolean
+      description: "Whether the strategy is so flawed it needs full regeneration"

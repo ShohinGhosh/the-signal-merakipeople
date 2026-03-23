@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { CostLog } from '../models/CostLog';
+import { getCostSummary } from '../services/ai/costTracker';
 
 const router = Router();
 
@@ -128,20 +130,56 @@ router.use(authMiddleware);
  *                       type: number
  *                       example: 5
  */
-router.get('/', (req: Request, res: Response) => {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 50;
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
 
-  // TODO: Replace with CostLog.find() with filters + pagination
-  res.json({
-    costs: [],
-    pagination: {
-      page,
-      limit,
-      total: 0,
-      totalPages: 0,
-    },
-  });
+    // Build filter
+    const filter: Record<string, any> = {};
+
+    if (req.query.startDate || req.query.endDate) {
+      filter.timestamp = {};
+      if (req.query.startDate) {
+        filter.timestamp.$gte = new Date(req.query.startDate as string);
+      }
+      if (req.query.endDate) {
+        const endDate = new Date(req.query.endDate as string);
+        endDate.setHours(23, 59, 59, 999);
+        filter.timestamp.$lte = endDate;
+      }
+    }
+
+    if (req.query.operation) {
+      filter.operation = req.query.operation;
+    }
+
+    if (req.query.user) {
+      filter.user = req.query.user;
+    }
+
+    const total = await CostLog.countDocuments(filter);
+    const totalPages = Math.ceil(total / limit);
+    const skip = (page - 1) * limit;
+
+    const costs = await CostLog.find(filter)
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    res.json({
+      costs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch cost logs' });
+  }
 });
 
 /**
@@ -256,25 +294,159 @@ router.get('/', (req: Request, res: Response) => {
  *                   description: Average cost per AI request in USD
  *                   example: 0.054
  */
-router.get('/summary', (req: Request, res: Response) => {
-  const startDate = (req.query.startDate as string) || new Date().toISOString().slice(0, 10);
-  const endDate = (req.query.endDate as string) || new Date().toISOString().slice(0, 10);
+router.get('/summary', async (req: Request, res: Response) => {
+  try {
+    const startDateStr = (req.query.startDate as string) || new Date().toISOString().slice(0, 10);
+    const endDateStr = (req.query.endDate as string) || new Date().toISOString().slice(0, 10);
 
-  // TODO: Replace with CostLog.aggregate() pipeline
-  res.json({
-    period: { startDate, endDate },
-    totalCostUsd: 0,
-    totalRequests: 0,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    byOperation: [],
-    byModel: [],
-    byAgentType: {
+    const startDate = new Date(startDateStr);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(endDateStr);
+    endDate.setHours(23, 59, 59, 999);
+
+    const summary = await getCostSummary(startDate, endDate);
+
+    // Also aggregate by model and agent type from raw logs
+    const logs = await CostLog.find({
+      timestamp: { $gte: startDate, $lte: endDate },
+    }).lean();
+
+    // Build byModel
+    const modelMap: Record<string, { count: number; costUsd: number }> = {};
+    // Build byAgentType
+    const agentTypeMap: Record<string, { count: number; costUsd: number }> = {
       generator: { count: 0, costUsd: 0 },
       critique: { count: 0, costUsd: 0 },
-    },
-    averageCostPerRequest: 0,
-  });
+    };
+
+    for (const log of logs) {
+      // By model
+      const model = log.aiModel;
+      if (!modelMap[model]) modelMap[model] = { count: 0, costUsd: 0 };
+      modelMap[model].count++;
+      modelMap[model].costUsd += log.costUsd;
+
+      // By agent type
+      if (log.agentType === 'generator' || log.agentType === 'critique') {
+        agentTypeMap[log.agentType].count++;
+        agentTypeMap[log.agentType].costUsd += log.costUsd;
+      }
+    }
+
+    const byModel = Object.entries(modelMap).map(([model, data]) => ({
+      model,
+      count: data.count,
+      costUsd: Math.round(data.costUsd * 10000) / 10000,
+    }));
+
+    const byOperation = Object.entries(summary.byOperation).map(([operation, data]) => ({
+      operation,
+      count: data.calls,
+      costUsd: Math.round(data.cost * 10000) / 10000,
+    }));
+
+    const totalRequests = summary.totalCalls;
+    const averageCostPerRequest = totalRequests > 0
+      ? Math.round((summary.totalCost / totalRequests) * 10000) / 10000
+      : 0;
+
+    res.json({
+      period: { startDate: startDateStr, endDate: endDateStr },
+      totalCostUsd: Math.round(summary.totalCost * 10000) / 10000,
+      totalRequests,
+      totalInputTokens: summary.totalInputTokens,
+      totalOutputTokens: summary.totalOutputTokens,
+      byOperation,
+      byModel,
+      byAgentType: {
+        generator: {
+          count: agentTypeMap.generator.count,
+          costUsd: Math.round(agentTypeMap.generator.costUsd * 10000) / 10000,
+        },
+        critique: {
+          count: agentTypeMap.critique.count,
+          costUsd: Math.round(agentTypeMap.critique.costUsd * 10000) / 10000,
+        },
+      },
+      averageCostPerRequest,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate cost summary' });
+  }
+});
+
+/**
+ * @openapi
+ * /api/costs/daily:
+ *   get:
+ *     tags:
+ *       - Costs
+ *     summary: Get daily aggregated cost data
+ *     description: Returns day-by-day aggregated cost data for time-series charts. Groups all AI calls by date.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start of date range (defaults to 30 days ago)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End of date range (defaults to today)
+ */
+router.get('/daily', async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const startDateStr = (req.query.startDate as string) || thirtyDaysAgo.toISOString().slice(0, 10);
+    const endDateStr = (req.query.endDate as string) || now.toISOString().slice(0, 10);
+
+    const startDate = new Date(startDateStr);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(endDateStr);
+    endDate.setHours(23, 59, 59, 999);
+
+    const daily = await CostLog.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+          calls: { $sum: 1 },
+          costUsd: { $sum: '$costUsd' },
+          inputTokens: { $sum: '$inputTokens' },
+          outputTokens: { $sum: '$outputTokens' },
+        },
+      },
+      {
+        $sort: { _id: 1 },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: '$_id',
+          calls: 1,
+          costUsd: { $round: ['$costUsd', 6] },
+          inputTokens: 1,
+          outputTokens: 1,
+        },
+      },
+    ]);
+
+    res.json({ daily });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch daily cost data' });
+  }
 });
 
 export default router;

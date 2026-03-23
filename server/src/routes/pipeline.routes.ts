@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { Lead } from '../models/Lead';
+import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
+import { gatherEvidenceContext } from '../services/ai/evidenceEngine';
 
 const router = Router();
 
@@ -75,20 +78,36 @@ router.use(authMiddleware);
  *                       type: number
  *                       example: 2
  */
-router.get('/', (req: Request, res: Response) => {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 20;
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
 
-  // TODO: Replace with Lead.find() with filters + pagination
-  res.json({
-    leads: [],
-    pagination: {
-      page,
-      limit,
-      total: 0,
-      totalPages: 0,
-    },
-  });
+    const filter: Record<string, string> = {};
+    if (req.query.stage) filter.stage = req.query.stage as string;
+    if (req.query.owner) filter.owner = req.query.owner as string;
+    if (req.query.source) filter.source = req.query.source as string;
+
+    const [leads, total] = await Promise.all([
+      Lead.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Lead.countDocuments(filter),
+    ]);
+
+    res.json({
+      leads,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch leads' });
+  }
 });
 
 /**
@@ -181,7 +200,7 @@ router.get('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: companyName, contactName, and owner are required
  */
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { companyName, contactName, owner } = req.body;
 
   if (!companyName || !contactName || !owner) {
@@ -189,19 +208,19 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with new Lead(req.body).save()
-  res.status(201).json({
-    message: 'Lead created',
-    lead: {
-      _id: 'new-lead-id',
+  try {
+    const lead = await new Lead({
       ...req.body,
       stage: req.body.stage || 'RADAR',
-      lastContactAt: null,
-      notes: req.body.notes || [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  });
+    }).save();
+
+    res.status(201).json({
+      message: 'Lead created',
+      lead,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create lead' });
+  }
 });
 
 /**
@@ -240,28 +259,17 @@ router.post('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Lead not found
  */
-router.get('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  // TODO: Replace with Lead.findById(id)
-  res.json({
-    _id: id,
-    companyName: 'Mock Company',
-    contactName: 'Mock Contact',
-    contactRole: '',
-    source: 'direct',
-    sourcePostId: null,
-    vertical: '',
-    dealValue: 0,
-    owner: 'shohini',
-    stage: 'RADAR',
-    lastContactAt: null,
-    nextAction: '',
-    nextActionAt: null,
-    notes: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return;
+    }
+    res.json(lead);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch lead' });
+  }
 });
 
 /**
@@ -338,18 +346,28 @@ router.get('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Lead not found
  */
-router.put('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const updateData = { ...req.body };
 
-  // TODO: Replace with Lead.findByIdAndUpdate(id, req.body, { new: true })
-  res.json({
-    message: 'Lead updated',
-    lead: {
-      _id: id,
-      ...req.body,
-      updatedAt: new Date().toISOString(),
-    },
-  });
+    // If stage is being changed, set lastContactAt to now
+    if (updateData.stage) {
+      updateData.lastContactAt = new Date();
+    }
+
+    const lead = await Lead.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (!lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return;
+    }
+
+    res.json({
+      message: 'Lead updated',
+      lead,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update lead' });
+  }
 });
 
 /**
@@ -439,7 +457,7 @@ router.put('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Lead not found
  */
-router.post('/:id/draft-outreach', (req: Request, res: Response) => {
+router.post('/:id/draft-outreach', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { channel } = req.body;
 
@@ -449,19 +467,59 @@ router.post('/:id/draft-outreach', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with AI outreach generation via orchestrator
-  res.json({
-    message: 'Outreach draft generated',
-    outreach: {
-      channel,
-      subject: channel === 'email' ? 'Quick question about your team\'s growth' : undefined,
-      body: 'AI-generated outreach message placeholder. Will be personalized based on lead profile and strategy.',
-      aiEvidence: {
-        strategyReferences: ['positioningStatement', 'icpPrimary'],
-        reasoning: 'Outreach drafted based on lead vertical and strategy positioning',
+  try {
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return;
+    }
+
+    // Gather evidence context from the database
+    const evidenceContext = await gatherEvidenceContext(req.user?.name);
+
+    // Build context with lead info and evidence
+    const context: Record<string, string> = {
+      ...evidenceContext,
+      LEAD_COMPANY: lead.companyName,
+      LEAD_CONTACT: lead.contactName,
+      LEAD_ROLE: lead.contactRole,
+      LEAD_VERTICAL: lead.vertical,
+      LEAD_STAGE: lead.stage,
+      LEAD_SOURCE: lead.source,
+      LEAD_NOTES: lead.notes.map((n) => n.text).join('\n'),
+      CHANNEL: channel,
+    };
+
+    // Run the agent-critique loop
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt: 'outreach-drafter',
+      critiquePrompt: 'outreach-critique',
+      context,
+      operation: 'draft-outreach',
+      user: req.user?.name as string | undefined,
+      relatedId: id as string,
+      relatedCollection: 'Lead',
+    });
+
+    // Parse the result
+    const parsed = result.parsed || {};
+
+    res.json({
+      message: 'Outreach draft generated',
+      outreach: {
+        channel,
+        subject: parsed.subject || undefined,
+        body: parsed.body || parsed.message || result.content,
+        aiEvidence: {
+          strategyReferences: result.evidence.strategyReferences,
+          reasoning: result.evidence.claims.map((c) => `${c.claim} [${c.source}: ${c.reference}]`).join('; ') ||
+            result.critique.feedback,
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate outreach draft' });
+  }
 });
 
 /**
@@ -504,11 +562,17 @@ router.post('/:id/draft-outreach', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Lead not found
  */
-router.delete('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  // TODO: Replace with Lead.findByIdAndDelete(id)
-  res.json({ message: 'Lead removed' });
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const lead = await Lead.findByIdAndDelete(req.params.id);
+    if (!lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return;
+    }
+    res.json({ message: 'Lead removed' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove lead' });
+  }
 });
 
 /**

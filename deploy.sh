@@ -11,7 +11,7 @@ set -euo pipefail
 
 REMOTE_USER="azureuser"
 REMOTE_HOST="20.197.2.111"
-PEM_KEY="${PEM_KEY:-C:/Users/ahams/Downloads/pwctesttobedeleted_key.pem}"
+PEM_KEY="${PEM_KEY:-C:/Users/sanjo/Downloads/Client-Projects/PwC/pwctesttobedeleted_key.pem}"
 SSH_OPTS="-i $PEM_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=15"
 REMOTE_DIR="/home/azureuser/the-signal"
 
@@ -64,7 +64,7 @@ ok "Local test passed — containers stopped"
 # ============================================================
 log "Step 3/5 — Saving Docker images..."
 
-docker save the-signal-signal-api:latest the-signal-signal-client:latest | gzip > /tmp/signal-images.tar.gz
+docker save signal-outreach-signal-api:latest signal-outreach-signal-client:latest | gzip > /tmp/signal-images.tar.gz
 IMAGE_SIZE=$(du -h /tmp/signal-images.tar.gz | cut -f1)
 ok "Images saved ($IMAGE_SIZE)"
 
@@ -73,6 +73,15 @@ log "Step 4/5 — Transferring to $REMOTE_HOST..."
 ssh $SSH_OPTS $REMOTE_USER@$REMOTE_HOST "mkdir -p $REMOTE_DIR"
 scp $SSH_OPTS /tmp/signal-images.tar.gz $REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/signal-images.tar.gz
 scp $SSH_OPTS docker-compose.prod.yml $REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/docker-compose.yml
+
+# Transfer .env file so docker-compose can interpolate API keys
+if [ -f .env ]; then
+  scp $SSH_OPTS .env $REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/.env
+  ok ".env file transferred"
+else
+  warn "No .env file found — API keys won't be available on production"
+fi
+
 ok "Transfer complete"
 
 rm -f /tmp/signal-images.tar.gz

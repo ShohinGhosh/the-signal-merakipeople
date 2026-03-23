@@ -1,7 +1,7 @@
 name: "image-prompt-builder"
 version: "1.0"
 description: "Builds detailed image generation prompts for fal.ai that follow brand guidelines, optimized for platform and image type."
-model: "claude-sonnet-4-5-20250514"
+model: "claude-3-5-sonnet-20241022"
 max_tokens: 1500
 temperature: 0.6
 system_prompt: |

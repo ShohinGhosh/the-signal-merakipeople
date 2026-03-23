@@ -5,10 +5,9 @@ import { StrategyProvider } from './contexts/StrategyContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import StrategyPage from './pages/StrategyPage';
-import SignalFeedPage from './pages/SignalFeedPage';
+import InsightsPage from './pages/InsightsPage';
 import CalendarPage from './pages/CalendarPage';
-import BrainPage from './pages/BrainPage';
-import PipelinePage from './pages/PipelinePage';
+import LeadsPage from './pages/LeadsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -17,8 +16,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-brand-graphite flex items-center justify-center">
-        <div className="text-white/40">Loading...</div>
+      <div className="min-h-screen bg-brand-cloud flex items-center justify-center">
+        <div className="text-slate-400">Loading...</div>
       </div>
     );
   }
@@ -51,12 +50,17 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/strategy" replace />} />
         <Route path="strategy" element={<StrategyPage />} />
-        <Route path="signal-feed" element={<SignalFeedPage />} />
+        <Route path="insights" element={<InsightsPage />} />
         <Route path="calendar" element={<CalendarPage />} />
-        <Route path="brain" element={<BrainPage />} />
-        <Route path="pipeline" element={<PipelinePage />} />
+        <Route path="leads" element={<LeadsPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {/* Redirects for old routes */}
+        <Route path="signal-feed" element={<Navigate to="/insights" replace />} />
+        <Route path="brain" element={<Navigate to="/calendar" replace />} />
+        <Route path="pipeline" element={<Navigate to="/leads" replace />} />
+        <Route path="automations" element={<Navigate to="/calendar" replace />} />
+        <Route path="audit" element={<Navigate to="/analytics" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

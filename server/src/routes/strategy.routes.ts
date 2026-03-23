@@ -2,7 +2,12 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { Strategy } from '../models/Strategy';
 import { callAI } from '../services/ai/aiClient';
+import { callGeminiVision } from '../services/ai/geminiClient';
 import { env } from '../config/env';
+import { logCost, calculateCost } from '../services/ai/costTracker';
+import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
+import { gatherEvidenceContext } from '../services/ai/evidenceEngine';
+import { AnalyticsWeekly } from '../models/AnalyticsWeekly';
 
 const router = Router();
 
@@ -162,7 +167,7 @@ router.get('/current', async (req: Request, res: Response) => {
         version: 1,
         isCurrent: true,
         isComplete: false,
-        onboardingProgress: { currentSection: 0, totalSections: 5, completedSections: [] },
+        onboardingProgress: { currentSection: 0, totalSections: 6, completedSections: [] },
       });
     }
 
@@ -261,194 +266,79 @@ router.post('/onboarding', async (req: Request, res: Response) => {
         version: 1,
         isCurrent: true,
         isComplete: false,
-        onboardingProgress: { currentSection: 0, totalSections: 5, completedSections: [] },
+        onboardingProgress: { currentSection: 0, totalSections: 6, completedSections: [] },
+        rawInputs: {},
       });
     }
 
-    const sectionKey = `section_${section}`;
-
-    // Section names and extraction schemas
-    const sectionConfig: Record<number, { name: string; schema: string; fallbackMap: (text: string) => Record<string, any> }> = {
-      1: {
-        name: 'Business Context',
-        schema: `{
-  "northStar": "string - The company's north star / overarching mission or purpose",
-  "positioningStatement": "string - How the company positions itself, its unique value proposition",
-  "icpPrimary": { "description": "string - Primary ideal customer profile description", "industry": "string or null", "companySize": "string or null", "role": "string or null", "painPoints": ["string"] },
-  "icpSecondary": { "description": "string or null - Secondary customer profile if mentioned" },
-  "antiIcp": "string or null - Who they do NOT want to serve"
-}`,
-        fallbackMap: (text: string) => ({
-          northStar: text.substring(0, 500),
-          positioningStatement: '',
-          icpPrimary: { description: text.substring(0, 300) },
-        }),
-      },
-      2: {
-        name: 'Goals & Metrics',
-        schema: `{
-  "goal90Day": "string - The primary 90-day goal",
-  "metricsTargets": {
-    "linkedinFollowers": "number or null",
-    "linkedinEngagementRate": "number or null - as percentage",
-    "linkedinDmsPerWeek": "number or null",
-    "instagramFollowers": "number or null",
-    "instagramReach": "number or null",
-    "leadsPerMonth": "number or null",
-    "demoToCloseRate": "number or null - as percentage",
-    "mrrTarget": "number or null",
-    "trainingRevenueTarget": "number or null"
-  }
-}`,
-        fallbackMap: (text: string) => ({
-          goal90Day: text.substring(0, 500),
-          metricsTargets: {},
-        }),
-      },
-      3: {
-        name: 'Current State',
-        schema: `{
-  "contentPillars": [{ "name": "string - pillar topic name", "purpose": "string - why this pillar matters", "targetPercent": "number - percentage of content (all should sum to ~100)", "examplePostTypes": ["string"], "owner": "string - shohini, sanjoy, or both" }],
-  "platformStrategy": [{ "platform": "string - e.g. LinkedIn, Instagram, Twitter", "primaryPurpose": "string", "weeklyTarget": "number - posts per week", "bestFormats": ["string"], "bestPostingTimes": ["string"] }],
-  "keyMessages": ["string - core messages or themes they want to communicate"]
-}`,
-        fallbackMap: (text: string) => ({
-          contentPillars: [],
-          platformStrategy: [],
-          keyMessages: [text.substring(0, 300)],
-        }),
-      },
-      4: {
-        name: 'Voice & Positioning',
-        schema: `{
-  "voiceShohini": "string - Shohini's personal voice/tone description",
-  "voiceSanjoy": "string - Sanjoy's personal voice/tone description",
-  "sharedTone": "string - The shared brand tone they both use",
-  "bannedPhrases": ["string - words or phrases they want to avoid"],
-  "keyMessages": ["string - additional key messages about their voice/positioning"]
-}`,
-        fallbackMap: (text: string) => ({
-          voiceShohini: text.substring(0, 300),
-          voiceSanjoy: '',
-          sharedTone: '',
-          bannedPhrases: [],
-        }),
-      },
-      5: {
-        name: 'Campaigns',
-        schema: `{
-  "keyMessages": ["string - campaign-related key messages or priorities"],
-  "competitiveIntelligence": "string or null - any competitive landscape info mentioned"
-}`,
-        fallbackMap: (text: string) => ({
-          keyMessages: [text.substring(0, 300)],
-          competitiveIntelligence: '',
-        }),
-      },
+    // Map section identifiers to rawInputs field names
+    const sectionFieldMap: Record<string, string> = {
+      '1': 'rawInputs.section1_businessContext',
+      '2': 'rawInputs.section2_goalsMetrics',
+      '3': 'rawInputs.section3_currentState',
+      '3a': 'rawInputs.section3a_platformMetrics',
+      '4': 'rawInputs.section4_voicePositioning',
+      '5': 'rawInputs.section5_campaigns',
     };
 
-    const config = sectionConfig[section];
-    if (!config) {
-      res.status(400).json({ error: `Invalid section number: ${section}` });
+    const sectionNames: Record<string, string> = {
+      '1': 'Business Context',
+      '2': 'Goals & Metrics',
+      '3': 'Current State',
+      '3a': 'Platform Metrics Snapshot',
+      '4': 'Voice & Positioning',
+      '5': 'Campaigns',
+    };
+
+    const SECTION_ORDER = ['1', '2', '3', '3a', '4', '5'];
+
+    const sectionStr = String(section);
+    const fieldPath = sectionFieldMap[sectionStr];
+    if (!fieldPath) {
+      res.status(400).json({ error: `Invalid section: ${section}` });
       return;
     }
 
-    let fieldsToUpdate: Record<string, any> = {};
-    let nextQuestion = '';
+    const sectionKey = `section_${sectionStr}`;
 
-    // Try AI extraction if any AI key is available
-    let aiProvider: string | undefined;
-    if (env.ANTHROPIC_API_KEY || env.GEMINI_API_KEY) {
-      try {
-        const provider = env.ANTHROPIC_API_KEY ? 'claude' : 'gemini';
-        console.log(`[Onboarding] Using ${provider} AI to extract section ${section} data...`);
-
-        const extractionResult = await callAI({
-          systemPrompt: `You are a strategy data extraction engine for MerakiPeople. Extract structured data from the user's free-text onboarding response. Return ONLY valid JSON, no markdown fences, no commentary.`,
-          userPrompt: `Section ${section}: ${config.name}\n\nUser's response:\n"""\n${userResponse}\n"""\n\nExtract these fields as JSON:\n${config.schema}\n\nReturn ONLY the JSON object. Use null for fields you cannot determine.`,
-          model: 'claude-3-5-sonnet-20241022',
-          maxTokens: 2000,
-          temperature: 0.3,
-          provider: provider as any,
-          enableFallback: true,
-        });
-
-        aiProvider = extractionResult.provider;
-
-        // Parse the AI response
-        let parsed: Record<string, any>;
-        const cleaned = extractionResult.content.trim().replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
-        try {
-          parsed = JSON.parse(cleaned);
-        } catch (parseErr) {
-          console.warn(`[Onboarding] AI response parse failed, using fallback. Response: ${extractionResult.content.substring(0, 200)}`);
-          parsed = config.fallbackMap(userResponse);
-        }
-
-        // Clean nulls — don't overwrite existing data with null
-        for (const [key, value] of Object.entries(parsed)) {
-          if (value !== null && value !== undefined) {
-            fieldsToUpdate[key] = value;
-          }
-        }
-
-        // Also generate a follow-up question for the next section
-        if (section < 5) {
-          const nextConfig = sectionConfig[section + 1];
-          nextQuestion = `Great, I've captured your ${config.name.toLowerCase()} details. Now let's talk about ${nextConfig.name.toLowerCase()} - ${getSectionDescription(section + 1)}`;
-        }
-
-        console.log(`[Onboarding] Extracted ${Object.keys(fieldsToUpdate).length} fields from section ${section} via ${extractionResult.provider}/${extractionResult.model}`);
-      } catch (aiErr) {
-        console.warn(`[Onboarding] AI extraction failed, using fallback:`, aiErr);
-        fieldsToUpdate = config.fallbackMap(userResponse);
-      }
-    } else {
-      // No API key — use simple fallback mapping
-      console.log(`[Onboarding] No AI API key configured, using fallback extraction for section ${section}`);
-      fieldsToUpdate = config.fallbackMap(userResponse);
-    }
-
-    // For section 3 and 5 which may add to keyMessages, merge with existing
-    if ((section === 3 || section === 5) && fieldsToUpdate.keyMessages) {
-      const existing = strategy.keyMessages || [];
-      const newMessages = fieldsToUpdate.keyMessages.filter(
-        (msg: string) => !existing.includes(msg)
-      );
-      fieldsToUpdate.keyMessages = [...existing, ...newMessages];
-    }
-
+    // Save raw input — NO AI extraction here
     const completedSections = [...(strategy.onboardingProgress?.completedSections || [])];
     if (!completedSections.includes(sectionKey)) {
       completedSections.push(sectionKey);
     }
 
-    const nextSection = Math.min(section + 1, 5);
-    const isComplete = completedSections.length >= 5;
+    const currentIdx = SECTION_ORDER.indexOf(sectionStr);
+    const nextIdx = Math.min(currentIdx + 1, SECTION_ORDER.length - 1);
+    const nextSectionId = SECTION_ORDER[nextIdx];
+    const allSectionsFilled = completedSections.length >= 6;
 
     await Strategy.findByIdAndUpdate(strategy._id, {
-      ...fieldsToUpdate,
-      isComplete,
+      [fieldPath]: userResponse,
+      // Do NOT set isComplete — that only happens on /approve
       onboardingProgress: {
-        currentSection: isComplete ? 5 : nextSection,
-        totalSections: 5,
+        currentSection: allSectionsFilled ? 5 : (nextSectionId === '3a' ? 3.5 : Number(nextSectionId)),
+        totalSections: 6,
         completedSections,
       },
       updatedBy: req.user?.name || 'unknown',
     });
 
+    // Generate a contextual follow-up question for the next section
+    let nextQuestion = '';
+    if (currentIdx < SECTION_ORDER.length - 1) {
+      nextQuestion = `Great, I've captured your ${sectionNames[sectionStr]?.toLowerCase()} details. Now let's talk about ${sectionNames[nextSectionId]?.toLowerCase()} — ${getSectionDescription(nextSectionId)}`;
+    }
+
+    console.log(`[Onboarding] Saved raw input for section ${sectionStr} (${sectionNames[sectionStr]}), ${userResponse.length} chars`);
+
     res.json({
-      message: `Section ${section} processed successfully`,
-      extractedData: fieldsToUpdate,
+      message: `Section ${sectionStr} saved successfully`,
+      savedInput: userResponse,
       nextQuestion,
-      evidence: {
-        source: 'user_onboarding_response',
-        provider: aiProvider || 'fallback',
-        fieldsExtracted: Object.keys(fieldsToUpdate),
-      },
+      allSectionsFilled,
       onboardingProgress: {
-        currentSection: isComplete ? 5 : nextSection,
-        totalSections: 5,
+        currentSection: allSectionsFilled ? 5 : (nextSectionId === '3a' ? 3.5 : Number(nextSectionId)),
+        totalSections: 6,
         completedSections,
       },
     });
@@ -458,16 +348,247 @@ router.post('/onboarding', async (req: Request, res: Response) => {
   }
 });
 
-function getSectionDescription(section: number): string {
-  const descriptions: Record<number, string> = {
-    1: 'What MerakiPeople does and who it serves',
-    2: 'What does success look like in 90 days? What KPIs matter most?',
-    3: 'What content have you done before? What platforms are you active on?',
-    4: 'How do you want to sound? What topics do you own?',
-    5: 'Any upcoming launches, events, or campaigns in the next quarter?',
+function getSectionDescription(section: number | string): string {
+  const descriptions: Record<string, string> = {
+    '1': 'Tell us about your company — what you do, who you serve, and what makes you different.',
+    '2': 'What does success look like in 90 days? What KPIs matter most?',
+    '3': 'What content have you done before? What platforms are you active on?',
+    '3a': "Let's take a quick snapshot of where you stand on LinkedIn and Instagram.",
+    '4': 'How do you want to sound? What topics do you own?',
+    '5': 'Any upcoming launches, events, or campaigns in the next quarter?',
   };
-  return descriptions[section] || '';
+  return descriptions[String(section)] || '';
 }
+
+/**
+ * @openapi
+ * /api/strategy/generate:
+ *   post:
+ *     tags:
+ *       - Strategy
+ *     summary: Generate marketing strategy from raw inputs
+ *     description: Takes all 5 raw onboarding inputs and uses AI (agent+critique loop) to synthesize a complete marketing strategy. Can be called multiple times to re-generate.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Strategy generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 generatedFields:
+ *                   type: object
+ *                 iterations:
+ *                   type: number
+ *                 critiqueScore:
+ *                   type: number
+ *       400:
+ *         description: Not all sections have been filled
+ *       404:
+ *         description: No strategy found
+ */
+router.post('/generate', async (req: Request, res: Response) => {
+  try {
+    const strategy = await Strategy.findOne({ isCurrent: true });
+    if (!strategy) {
+      res.status(404).json({ error: 'No current strategy found. Complete onboarding first.' });
+      return;
+    }
+
+    const rawInputs = strategy.rawInputs;
+    if (
+      !rawInputs?.section1_businessContext ||
+      !rawInputs?.section2_goalsMetrics ||
+      !rawInputs?.section3_currentState ||
+      !rawInputs?.section3a_platformMetrics ||
+      !rawInputs?.section4_voicePositioning ||
+      !rawInputs?.section5_campaigns
+    ) {
+      res.status(400).json({
+        error: 'All 6 onboarding sections must be filled before generating a strategy.',
+        missingInputs: {
+          section1: !rawInputs?.section1_businessContext,
+          section2: !rawInputs?.section2_goalsMetrics,
+          section3: !rawInputs?.section3_currentState,
+          section3a: !rawInputs?.section3a_platformMetrics,
+          section4: !rawInputs?.section4_voicePositioning,
+          section5: !rawInputs?.section5_campaigns,
+        },
+      });
+      return;
+    }
+
+    console.log('[Strategy Generate] Running agent+critique loop to synthesize strategy from all raw inputs...');
+
+    // Build context with all raw inputs for the prompt templates
+    const context: Record<string, string> = {
+      SECTION1_BUSINESS_CONTEXT: rawInputs.section1_businessContext,
+      SECTION2_GOALS_METRICS: rawInputs.section2_goalsMetrics,
+      SECTION3_CURRENT_STATE: rawInputs.section3_currentState,
+      SECTION3A_PLATFORM_METRICS: rawInputs.section3a_platformMetrics,
+      SECTION4_VOICE_POSITIONING: rawInputs.section4_voicePositioning,
+      SECTION5_CAMPAIGNS: rawInputs.section5_campaigns,
+    };
+
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt: 'strategy-generator',
+      critiquePrompt: 'strategy-generator-critique',
+      context,
+      operation: 'strategy-generation',
+      user: req.user?.name || 'unknown',
+    });
+
+    // Parse the generated strategy
+    let generatedFields: Record<string, any> = {};
+
+    if (result.parsed) {
+      generatedFields = result.parsed;
+    } else {
+      // Try parsing the raw content
+      const cleaned = result.content.trim().replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
+      try {
+        generatedFields = JSON.parse(cleaned);
+      } catch (parseErr) {
+        console.error('[Strategy Generate] Failed to parse AI response:', parseErr);
+        res.status(500).json({ error: 'AI generated invalid JSON. Please try again.' });
+        return;
+      }
+    }
+
+    // Clean nulls — don't save null values
+    const fieldsToSave: Record<string, any> = {};
+    for (const [key, value] of Object.entries(generatedFields)) {
+      if (value !== null && value !== undefined) {
+        fieldsToSave[key] = value;
+      }
+    }
+
+    // Save generated fields to the strategy (but do NOT set isComplete)
+    await Strategy.findByIdAndUpdate(strategy._id, {
+      ...fieldsToSave,
+      updatedBy: req.user?.name || 'unknown',
+      updateReason: 'AI-generated from onboarding inputs',
+    });
+
+    console.log(`[Strategy Generate] Saved ${Object.keys(fieldsToSave).length} generated fields. Iterations: ${result.iterations}, Score: ${result.critique?.score || 'N/A'}`);
+
+    res.json({
+      message: 'Strategy generated successfully',
+      generatedFields: fieldsToSave,
+      iterations: result.iterations,
+      critiqueScore: result.critique?.score || null,
+      critiqueFeedback: result.critique?.feedback || null,
+    });
+  } catch (err: any) {
+    console.error('Strategy generate error:', err);
+
+    // Detect missing API key errors and return a clear message
+    const errMsg = err?.message || '';
+    if (errMsg.includes('API_KEY') || errMsg.includes('No AI provider')) {
+      res.status(503).json({
+        error: 'AI provider not configured. Please add your ANTHROPIC_API_KEY or GEMINI_API_KEY to the .env file in the project root.',
+        details: errMsg,
+      });
+      return;
+    }
+
+    res.status(500).json({ error: 'Failed to generate strategy. ' + errMsg });
+  }
+});
+
+/**
+ * @openapi
+ * /api/strategy/approve:
+ *   post:
+ *     tags:
+ *       - Strategy
+ *     summary: Approve the generated strategy
+ *     description: Marks the current strategy as complete and approved. This activates the strategy and unlocks all other features (signal feed, posts, pipeline, etc.).
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Strategy approved and activated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Strategy approved and activated
+ *                 strategy:
+ *                   type: object
+ *       404:
+ *         description: No strategy found
+ *       400:
+ *         description: Strategy has no generated content to approve
+ */
+router.post('/approve', async (req: Request, res: Response) => {
+  try {
+    const strategy = await Strategy.findOne({ isCurrent: true });
+    if (!strategy) {
+      res.status(404).json({ error: 'No current strategy found' });
+      return;
+    }
+
+    // Check that the strategy has at least some generated content
+    if (!strategy.northStar && !strategy.goal90Day && !strategy.positioningStatement) {
+      res.status(400).json({
+        error: 'Strategy has no generated content. Please run "Generate Strategy" first.',
+      });
+      return;
+    }
+
+    const updated = await Strategy.findByIdAndUpdate(
+      strategy._id,
+      {
+        isComplete: true,
+        onboardingProgress: {
+          currentSection: 5,
+          totalSections: 6,
+          completedSections: ['section_1', 'section_2', 'section_3', 'section_3a', 'section_4', 'section_5'],
+        },
+        updatedBy: req.user?.name || 'unknown',
+        updateReason: 'Strategy approved by user',
+      },
+      { new: true }
+    );
+
+    console.log(`[Strategy Approve] Strategy approved by ${req.user?.name}`);
+
+    // Auto-generate the first week's content calendar in the background
+    // (fire-and-forget — don't block the approve response)
+    try {
+      const axios = await import('axios');
+      const port = process.env.PORT || 5000;
+      const token = req.headers.authorization;
+      axios.default.post(
+        `http://localhost:${port}/api/calendar/generate-week`,
+        {},
+        { headers: { Authorization: token || '' } }
+      ).then(() => {
+        console.log('[Strategy Approve] Auto-generated first week calendar');
+      }).catch((calErr: any) => {
+        console.warn('[Strategy Approve] Auto-calendar generation failed (non-blocking):', calErr?.message);
+      });
+    } catch (hookErr) {
+      console.warn('[Strategy Approve] Calendar hook failed (non-blocking):', hookErr);
+    }
+
+    res.json({
+      message: 'Strategy approved and activated. Generating your first week content plan...',
+      strategy: updated,
+    });
+  } catch (err) {
+    console.error('Strategy approve error:', err);
+    res.status(500).json({ error: 'Failed to approve strategy' });
+  }
+});
 
 /**
  * @openapi
@@ -685,19 +806,76 @@ router.get('/versions', async (req: Request, res: Response) => {
  *                         nullable: true
  *                         example: null
  */
-router.get('/recommendations', (req: Request, res: Response) => {
-  // TODO: Replace with AI-generated recommendations from analytics + strategy analysis
-  res.json({
-    recommendations: [
-      {
-        _id: 'rec-001',
-        recommendation: 'Increase LinkedIn posting frequency from 3 to 5 per week',
-        reasoning: 'Engagement data shows 40% higher reach on weekday posts',
-        evidence: ['LinkedIn reach up 40% in weeks with 5+ posts'],
+router.get('/recommendations', async (req: Request, res: Response) => {
+  try {
+    // Check for existing recommendations in the latest AnalyticsWeekly record
+    const latestWeekly = await AnalyticsWeekly.findOne({
+      aiRecommendations: { $exists: true, $ne: [] },
+    }).sort({ weekStart: -1 });
+
+    if (latestWeekly && latestWeekly.aiRecommendations.length > 0) {
+      res.json({
+        recommendations: latestWeekly.aiRecommendations.map((rec, index) => ({
+          _id: `rec-${String(index).padStart(3, '0')}`,
+          recommendation: rec.recommendation,
+          reasoning: rec.reasoning,
+          evidence: rec.evidence,
+          accepted: rec.accepted,
+        })),
+        source: 'cached',
+        weekStart: latestWeekly.weekStart,
+      });
+      return;
+    }
+
+    // No cached recommendations — generate fresh ones via orchestrator
+    const evidenceContext = await gatherEvidenceContext();
+
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt: 'strategy-recommender',
+      critiquePrompt: 'strategy-critique',
+      context: evidenceContext as unknown as Record<string, string>,
+      operation: 'strategy-recommendations',
+      user: req.user?.name || 'unknown',
+    });
+
+    // Parse the orchestrator result into recommendations array
+    let recommendations: Array<{
+      _id: string;
+      recommendation: string;
+      reasoning: string;
+      evidence: string[];
+      accepted: boolean | null;
+    }> = [];
+
+    if (result.parsed && Array.isArray(result.parsed.recommendations)) {
+      recommendations = result.parsed.recommendations.map((rec: any, index: number) => ({
+        _id: `rec-${String(index).padStart(3, '0')}`,
+        recommendation: rec.recommendation || '',
+        reasoning: rec.reasoning || '',
+        evidence: Array.isArray(rec.evidence) ? rec.evidence : [],
         accepted: null,
-      },
-    ],
-  });
+      }));
+    } else if (result.parsed && Array.isArray(result.parsed)) {
+      recommendations = result.parsed.map((rec: any, index: number) => ({
+        _id: `rec-${String(index).padStart(3, '0')}`,
+        recommendation: rec.recommendation || '',
+        reasoning: rec.reasoning || '',
+        evidence: Array.isArray(rec.evidence) ? rec.evidence : [],
+        accepted: null,
+      }));
+    }
+
+    res.json({
+      recommendations,
+      source: 'generated',
+      iterations: result.iterations,
+      critiqueScore: result.critique.score,
+    });
+  } catch (err) {
+    console.error('Get recommendations error:', err);
+    res.status(500).json({ error: 'Failed to fetch recommendations' });
+  }
 });
 
 /**
@@ -746,15 +924,100 @@ router.get('/recommendations', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Recommendation not found
  */
-router.post('/recommendations/:id/accept', (req: Request, res: Response) => {
+router.post('/recommendations/:id/accept', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with recommendation lookup + strategy update + version creation
-  res.json({
-    message: 'Recommendation accepted and strategy updated',
-    recommendationId: id,
-    strategyVersion: 2,
-  });
+  try {
+    // Find the latest AnalyticsWeekly with recommendations
+    const latestWeekly = await AnalyticsWeekly.findOne({
+      aiRecommendations: { $exists: true, $ne: [] },
+    }).sort({ weekStart: -1 });
+
+    if (!latestWeekly) {
+      res.status(404).json({ error: 'No recommendations found' });
+      return;
+    }
+
+    // Parse the index from the recommendation id (e.g., "rec-001" -> 1)
+    const indexMatch = (id as string).match(/^rec-(\d+)$/);
+    const recIndex = indexMatch ? parseInt(indexMatch[1], 10) : -1;
+
+    if (recIndex < 0 || recIndex >= latestWeekly.aiRecommendations.length) {
+      res.status(404).json({ error: 'Recommendation not found' });
+      return;
+    }
+
+    // Set accepted: true on the matching recommendation
+    latestWeekly.aiRecommendations[recIndex].accepted = true;
+    await latestWeekly.save();
+
+    res.json({
+      message: 'Recommendation accepted and strategy updated',
+      recommendationId: id,
+      recommendation: latestWeekly.aiRecommendations[recIndex].recommendation,
+    });
+  } catch (err) {
+    console.error('Accept recommendation error:', err);
+    res.status(500).json({ error: 'Failed to accept recommendation' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /extract-platform-metrics — AI vision extraction from screenshot
+// ---------------------------------------------------------------------------
+router.post('/extract-platform-metrics', async (req: Request, res: Response) => {
+  try {
+    const { image } = req.body;
+    if (!image) {
+      res.status(400).json({ error: 'image (base64) is required' });
+      return;
+    }
+
+    const prompt = `You are analyzing a screenshot of a social media profile or analytics dashboard.
+Extract any LinkedIn and/or Instagram metrics you can find. Return ONLY valid JSON (no markdown, no backticks) in this exact format:
+
+{
+  "linkedin": {
+    "current_followers": <number or null>,
+    "avg_impressions": <number or null>,
+    "best_format": <"Text posts"|"Carousels"|"Video"|"Articles"|"Polls" or null>,
+    "pipeline_generating": <true|false or null>,
+    "channel_purpose": <"Lead generation"|"Brand awareness"|"Thought leadership"|"Community building"|"Leads + Awareness" or null>,
+    "target_90d": <number or null>
+  },
+  "instagram": {
+    "is_active": <true|false>,
+    "current_followers": <number or null>,
+    "avg_reach": <number or null>,
+    "best_format": <"Reels"|"Carousels"|"Single images"|"Stories" or null>,
+    "pipeline_generating": <true|false or null>,
+    "channel_purpose": <"Brand awareness"|"Personal brand"|"Lead generation"|"Community"|"Awareness + Leads" or null>,
+    "target_90d": <number or null>
+  }
+}
+
+Rules:
+- Only fill fields you can clearly see in the screenshot. Use null for anything not visible.
+- For follower counts, convert "1.2K" to 1200, "15K" to 15000, etc.
+- If the screenshot only shows one platform, leave the other platform's fields as null.
+- If you cannot determine which platform, make your best guess based on the UI.`;
+
+    const result = await callGeminiVision({
+      prompt,
+      imageBase64: image,
+      maxTokens: 1000,
+      temperature: 0.1,
+    });
+
+    // Parse the JSON response
+    const cleaned = result.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    res.json({ metrics: parsed });
+  } catch (error: any) {
+    console.error('Extract platform metrics error:', error?.message || error);
+    res.status(500).json({ error: 'Failed to extract metrics from image' });
+  }
 });
 
 export default router;

@@ -1,7 +1,7 @@
 name: "post-critique"
 version: "1.0"
 description: "Critiques generated post content for strategy alignment, voice fidelity, evidence backing, platform fit, hook quality, CTA effectiveness, and banned phrases."
-model: "claude-sonnet-4-5-20250514"
+model: "claude-3-5-sonnet-20241022"
 max_tokens: 2000
 temperature: 0.4
 system_prompt: |

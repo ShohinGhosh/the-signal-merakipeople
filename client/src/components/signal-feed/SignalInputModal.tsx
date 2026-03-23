@@ -43,12 +43,12 @@ export default function SignalInputModal({ onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-brand-graphite border border-white/10 rounded-xl w-full max-w-lg shadow-2xl">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <h3 className="text-lg font-semibold">Add to Signal</h3>
-          <button onClick={onClose} className="text-white/50 hover:text-white">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="text-lg font-semibold text-slate-900">Add Insight</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={20} />
           </button>
         </div>
@@ -59,13 +59,13 @@ export default function SignalInputModal({ onClose }: Props) {
             value={rawText}
             onChange={(e) => setRawText(e.target.value)}
             placeholder="What happened? What did you notice? What do you believe today that you didn't yesterday?"
-            className="w-full h-40 bg-white/5 border border-white/10 rounded-lg p-3 text-white placeholder-white/30 resize-none focus:outline-none focus:border-brand-coral/50"
+            className="w-full h-40 bg-white border border-slate-200 rounded-lg p-3 text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:border-brand-coral/50 focus:ring-1 focus:ring-brand-coral/20"
             autoFocus
           />
 
           {/* Tags */}
           <div>
-            <p className="text-xs text-white/50 mb-2">Context tags (optional)</p>
+            <p className="text-xs text-slate-500 mb-2">Context tags (optional)</p>
             <div className="flex flex-wrap gap-2">
               {SIGNAL_TAGS.map((tag) => (
                 <button
@@ -74,7 +74,7 @@ export default function SignalInputModal({ onClose }: Props) {
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     selectedTags.includes(tag.key)
                       ? 'bg-brand-coral text-white'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                   }`}
                 >
                   {tag.emoji} {tag.label}
@@ -89,16 +89,16 @@ export default function SignalInputModal({ onClose }: Props) {
             value={urlReference}
             onChange={(e) => setUrlReference(e.target.value)}
             placeholder="Inspired by URL (optional)"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-coral/50"
+            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-brand-coral/50 focus:ring-1 focus:ring-brand-coral/20"
           />
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-600 text-sm">{error}</p>}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-white/10">
-          <div className="flex items-center gap-2 text-sm text-white/50">
-            <div className="w-6 h-6 rounded-full bg-brand-coral/20 flex items-center justify-center text-brand-coral text-xs font-medium">
+        <div className="flex items-center justify-between p-4 border-t border-slate-200">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <div className="w-6 h-6 rounded-full bg-brand-coral/10 flex items-center justify-center text-brand-coral text-xs font-medium">
               {user?.name?.[0]}
             </div>
             <span className="capitalize">{user?.role}</span>
@@ -106,9 +106,9 @@ export default function SignalInputModal({ onClose }: Props) {
           <button
             onClick={handleSubmit}
             disabled={!rawText.trim() || submitting}
-            className="px-6 py-2 bg-brand-coral text-white rounded-lg text-sm font-medium hover:bg-brand-coral/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-2 bg-brand-coral text-white rounded-lg text-sm font-medium hover:bg-brand-coral/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
-            {submitting ? 'Processing...' : 'Add to Signal'}
+            {submitting ? 'Processing...' : 'Add Insight'}
           </button>
         </div>
       </div>

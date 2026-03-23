@@ -1,7 +1,7 @@
 name: "signal-feed-classifier"
 version: "1.0"
 description: "Classifies a signal feed entry against the client's strategy, determining insight type, content pillar alignment, timeliness, and routing decision."
-model: "claude-sonnet-4-5-20250514"
+model: "claude-3-5-sonnet-20241022"
 max_tokens: 2000
 temperature: 0.3
 system_prompt: |

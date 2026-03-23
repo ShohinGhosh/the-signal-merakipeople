@@ -62,22 +62,22 @@ export default function PipelinePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Pipeline</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-bold text-slate-900">Pipeline</h1>
         <div className="flex gap-2">
-          <div className="flex bg-white/5 rounded-lg p-1">
+          <div className="flex bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setView('kanban')}
-              className={`px-3 py-1 rounded text-sm ${
-                view === 'kanban' ? 'bg-brand-coral text-white' : 'text-white/50'
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                view === 'kanban' ? 'bg-brand-coral text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               Kanban
             </button>
             <button
               onClick={() => setView('list')}
-              className={`px-3 py-1 rounded text-sm ${
-                view === 'list' ? 'bg-brand-coral text-white' : 'text-white/50'
+              className={`px-3 py-1 rounded text-sm transition-colors ${
+                view === 'list' ? 'bg-brand-coral text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               List
@@ -85,7 +85,7 @@ export default function PipelinePage() {
           </div>
           <button
             onClick={() => setShowAddForm(true)}
-            className="px-4 py-1.5 bg-brand-coral text-white rounded-lg text-sm flex items-center gap-1"
+            className="px-4 py-1.5 bg-brand-coral text-white rounded-lg text-sm flex items-center gap-1 shadow-sm hover:bg-brand-coral/90 transition-colors"
           >
             <Plus size={14} /> Add Lead
           </button>
@@ -93,41 +93,41 @@ export default function PipelinePage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-white/40">Loading...</div>
+        <div className="text-center py-12 text-slate-400">Loading...</div>
       ) : view === 'kanban' ? (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div className="flex gap-4 overflow-x-auto pb-4">
           {PIPELINE_STAGES.filter((s) => s !== 'LOST').map((stage) => {
             const stageLeads = leads.filter((l) => l.stage === stage);
             return (
               <div
                 key={stage}
-                className="min-w-[220px] flex-shrink-0 bg-white/5 rounded-xl p-3"
+                className="min-w-[220px] flex-shrink-0 bg-slate-50 rounded-xl p-3 border border-slate-200/60"
               >
                 <div className="flex items-center gap-2 mb-3">
                   <div
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: STAGE_COLORS[stage] }}
                   />
-                  <span className="text-xs font-medium text-white/60 uppercase tracking-wider">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                     {stage.replace('_', ' ')}
                   </span>
-                  <span className="text-xs text-white/30 ml-auto">{stageLeads.length}</span>
+                  <span className="text-xs text-slate-300 ml-auto">{stageLeads.length}</span>
                 </div>
                 <div className="space-y-2">
                   {stageLeads.map((lead) => (
                     <div
                       key={lead._id}
                       onClick={() => setSelectedLead(lead)}
-                      className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition-colors border border-transparent hover:border-white/10"
+                      className="bg-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow border border-slate-200/60 shadow-sm"
                     >
-                      <div className="text-sm font-medium">{lead.companyName || 'Unnamed'}</div>
-                      <div className="text-xs text-white/50">{lead.contactName}</div>
+                      <div className="text-sm font-medium text-slate-900">{lead.companyName || 'Unnamed'}</div>
+                      <div className="text-xs text-slate-500">{lead.contactName}</div>
                       {lead.dealValue > 0 && (
                         <div className="text-xs text-brand-coral mt-1 font-mono">
                           {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(lead.dealValue)}
                         </div>
                       )}
-                      <div className="text-xs text-white/30 mt-1 capitalize">{lead.source?.replace('_', ' ')}</div>
+                      <div className="text-xs text-slate-300 mt-1 capitalize">{lead.source?.replace('_', ' ')}</div>
                     </div>
                   ))}
                 </div>
@@ -136,10 +136,10 @@ export default function PipelinePage() {
           })}
         </div>
       ) : (
-        <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="bg-white border border-slate-200/60 rounded-xl overflow-hidden shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-white/40 text-xs">
+              <tr className="border-b border-slate-200 text-slate-400 text-xs uppercase tracking-wider">
                 <th className="text-left p-3">Company</th>
                 <th className="text-left p-3">Contact</th>
                 <th className="text-left p-3">Stage</th>
@@ -154,10 +154,10 @@ export default function PipelinePage() {
                 <tr
                   key={lead._id}
                   onClick={() => setSelectedLead(lead)}
-                  className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                  className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
                 >
-                  <td className="p-3 font-medium">{lead.companyName}</td>
-                  <td className="p-3 text-white/60">{lead.contactName}</td>
+                  <td className="p-3 font-medium text-slate-900">{lead.companyName}</td>
+                  <td className="p-3 text-slate-500">{lead.contactName}</td>
                   <td className="p-3">
                     <span
                       className="px-2 py-0.5 rounded-full text-xs"
@@ -169,14 +169,14 @@ export default function PipelinePage() {
                       {lead.stage.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="p-3 font-mono text-xs">
+                  <td className="p-3 font-mono text-xs text-slate-700">
                     {lead.dealValue > 0
                       ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(lead.dealValue)
                       : '—'}
                   </td>
-                  <td className="p-3 text-white/60 capitalize">{lead.source?.replace('_', ' ')}</td>
-                  <td className="p-3 capitalize">{lead.owner}</td>
-                  <td className="p-3 text-white/50 text-xs">{lead.nextAction || '—'}</td>
+                  <td className="p-3 text-slate-500 capitalize">{lead.source?.replace('_', ' ')}</td>
+                  <td className="p-3 capitalize text-slate-700">{lead.owner}</td>
+                  <td className="p-3 text-slate-500 text-xs">{lead.nextAction || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -226,31 +226,31 @@ function LeadDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-brand-graphite border border-white/10 rounded-xl w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <h3 className="text-lg font-semibold">{lead.companyName || 'Lead Details'}</h3>
-          <button onClick={onClose} className="text-white/50 hover:text-white">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="text-lg font-semibold text-slate-900">{lead.companyName || 'Lead Details'}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={20} />
           </button>
         </div>
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <span className="text-white/40 text-xs">Contact</span>
-              <p>{lead.contactName || '—'}</p>
+              <span className="text-slate-400 text-xs">Contact</span>
+              <p className="text-slate-900">{lead.contactName || '—'}</p>
             </div>
             <div>
-              <span className="text-white/40 text-xs">Role</span>
-              <p>{lead.contactRole || '—'}</p>
+              <span className="text-slate-400 text-xs">Role</span>
+              <p className="text-slate-900">{lead.contactRole || '—'}</p>
             </div>
             <div>
-              <span className="text-white/40 text-xs">Vertical</span>
-              <p>{lead.vertical || '—'}</p>
+              <span className="text-slate-400 text-xs">Vertical</span>
+              <p className="text-slate-900">{lead.vertical || '—'}</p>
             </div>
             <div>
-              <span className="text-white/40 text-xs">Deal Value</span>
-              <p className="font-mono">
+              <span className="text-slate-400 text-xs">Deal Value</span>
+              <p className="font-mono text-slate-900">
                 {lead.dealValue > 0
                   ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(lead.dealValue)
                   : '—'}
@@ -260,26 +260,26 @@ function LeadDetailModal({
 
           {/* Draft Outreach */}
           <div>
-            <p className="text-xs text-white/40 mb-2">AI Outreach Draft</p>
+            <p className="text-xs text-slate-400 mb-2">AI Outreach Draft</p>
             <div className="flex gap-2">
               <button
                 onClick={() => handleDraftOutreach('linkedin_dm')}
                 disabled={draftingOutreach}
-                className="px-3 py-1.5 bg-white/5 text-white/60 rounded text-xs hover:bg-white/10 flex items-center gap-1"
+                className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded text-xs hover:bg-slate-200 flex items-center gap-1 transition-colors"
               >
                 <MessageSquare size={12} /> LinkedIn DM
               </button>
               <button
                 onClick={() => handleDraftOutreach('email')}
                 disabled={draftingOutreach}
-                className="px-3 py-1.5 bg-white/5 text-white/60 rounded text-xs hover:bg-white/10 flex items-center gap-1"
+                className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded text-xs hover:bg-slate-200 flex items-center gap-1 transition-colors"
               >
                 <MessageSquare size={12} /> Email
               </button>
             </div>
-            {draftingOutreach && <p className="text-xs text-white/30 mt-2">Generating...</p>}
+            {draftingOutreach && <p className="text-xs text-slate-300 mt-2">Generating...</p>}
             {outreachDraft && (
-              <div className="mt-2 bg-white/5 rounded-lg p-3 text-sm text-white/80 whitespace-pre-wrap">
+              <div className="mt-2 bg-slate-50 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap border border-slate-200/60">
                 {outreachDraft}
               </div>
             )}
@@ -288,12 +288,12 @@ function LeadDetailModal({
           {/* Notes */}
           {lead.notes?.length > 0 && (
             <div>
-              <p className="text-xs text-white/40 mb-2">Notes</p>
+              <p className="text-xs text-slate-400 mb-2">Notes</p>
               <div className="space-y-2">
                 {lead.notes.map((note, i) => (
-                  <div key={i} className="bg-white/5 rounded p-2 text-xs">
-                    <p className="text-white/70">{note.text}</p>
-                    <p className="text-white/30 mt-1">
+                  <div key={i} className="bg-slate-50 rounded p-2 text-xs border border-slate-100">
+                    <p className="text-slate-600">{note.text}</p>
+                    <p className="text-slate-300 mt-1">
                       {note.author} — {new Date(note.timestamp).toLocaleDateString()}
                     </p>
                   </div>
@@ -340,11 +340,11 @@ function AddLeadModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-brand-graphite border border-white/10 rounded-xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <h3 className="text-lg font-semibold">Add Lead</h3>
-          <button onClick={onClose} className="text-white/50 hover:text-white">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="text-lg font-semibold text-slate-900">Add Lead</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={20} />
           </button>
         </div>
@@ -356,31 +356,31 @@ function AddLeadModal({
             { key: 'vertical', label: 'Vertical', placeholder: 'e.g., IT Services' },
           ].map((field) => (
             <div key={field.key}>
-              <label className="text-xs text-white/50 mb-1 block">{field.label}</label>
+              <label className="text-xs text-slate-500 mb-1 block">{field.label}</label>
               <input
                 type="text"
                 value={(form as any)[field.key]}
                 onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
                 placeholder={field.placeholder}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-brand-coral/50"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-300 focus:outline-none focus:border-brand-coral/50 focus:ring-1 focus:ring-brand-coral/20"
               />
             </div>
           ))}
           <div>
-            <label className="text-xs text-white/50 mb-1 block">Deal Value (INR)</label>
+            <label className="text-xs text-slate-500 mb-1 block">Deal Value (INR)</label>
             <input
               type="number"
               value={form.dealValue}
               onChange={(e) => setForm({ ...form, dealValue: parseInt(e.target.value) || 0 })}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-coral/50"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-brand-coral/50 focus:ring-1 focus:ring-brand-coral/20"
             />
           </div>
           <div>
-            <label className="text-xs text-white/50 mb-1 block">Source</label>
+            <label className="text-xs text-slate-500 mb-1 block">Source</label>
             <select
               value={form.source}
               onChange={(e) => setForm({ ...form, source: e.target.value })}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900"
             >
               <option value="linkedin_content">LinkedIn Content</option>
               <option value="instagram">Instagram</option>
@@ -391,14 +391,14 @@ function AddLeadModal({
             </select>
           </div>
         </div>
-        <div className="p-4 border-t border-white/10 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-white/60 hover:text-white">
+        <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting || !form.companyName}
-            className="px-6 py-2 bg-brand-coral text-white rounded-lg text-sm font-medium disabled:opacity-40"
+            className="px-6 py-2 bg-brand-coral text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-brand-coral/90 transition-colors shadow-sm"
           >
             {submitting ? 'Adding...' : 'Add Lead'}
           </button>

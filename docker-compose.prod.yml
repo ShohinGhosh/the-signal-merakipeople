@@ -1,6 +1,6 @@
 services:
   signal-api:
-    image: the-signal-signal-api:latest
+    image: signal-outreach-signal-api:latest
     container_name: signal-api
     restart: unless-stopped
     ports:
@@ -9,6 +9,10 @@ services:
       - MONGODB_URI=mongodb+srv://ishwari:Ganesh%4024@testdb.a204r.mongodb.net/the-signal
       - JWT_SECRET=${JWT_SECRET:-the-signal-jwt-secret-prod-2024}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - FAL_KEY=${FAL_KEY:-}
       - PORT=5000
       - NODE_ENV=production
@@ -18,7 +22,7 @@ services:
           memory: 200M
 
   signal-client:
-    image: the-signal-signal-client:latest
+    image: signal-outreach-signal-client:latest
     container_name: signal-client
     restart: unless-stopped
     ports:

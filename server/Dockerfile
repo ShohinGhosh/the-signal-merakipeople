@@ -32,7 +32,8 @@ RUN npm ci --omit=dev --ignore-scripts --workspace=server 2>/dev/null || npm ci 
 COPY --from=builder /app/server/dist server/dist
 
 # Copy prompt YAML files (needed at runtime)
-COPY server/src/prompts server/src/prompts
+# promptManager resolves from dist/services/ai/../../prompts → dist/prompts
+COPY server/src/prompts server/dist/prompts
 
 # Copy seed script
 COPY scripts/seed-docker.js scripts/seed-docker.js

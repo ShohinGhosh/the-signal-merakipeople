@@ -58,6 +58,8 @@ export function interpolatePrompt(template: string, context: Record<string, stri
 
 /**
  * Builds a ready-to-use prompt pair (system + user) from a template name and context.
+ * If the template defines an output_schema, appends a JSON-only instruction to the
+ * user prompt so the AI model returns structured output instead of conversational text.
  */
 export function buildPrompt(
   promptName: string,
@@ -65,7 +67,14 @@ export function buildPrompt(
 ): { systemPrompt: string; userPrompt: string; template: PromptTemplate } {
   const template = loadPrompt(promptName);
   const systemPrompt = interpolatePrompt(template.system_prompt, context);
-  const userPrompt = interpolatePrompt(template.user_prompt, context);
+  let userPrompt = interpolatePrompt(template.user_prompt, context);
+
+  // Inject output_schema enforcement if the template defines one
+  if (template.output_schema && Object.keys(template.output_schema).length > 0) {
+    const schemaStr = JSON.stringify(template.output_schema, null, 2);
+    userPrompt += `\n\nIMPORTANT: You MUST respond with ONLY valid JSON matching this schema. No markdown fences, no explanation, no text before or after the JSON object.\n${schemaStr}`;
+  }
+
   return { systemPrompt, userPrompt, template };
 }
 

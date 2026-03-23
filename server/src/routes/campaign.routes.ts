@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { Campaign } from '../models/Campaign';
 
 const router = Router();
 
@@ -36,27 +37,18 @@ router.use(authMiddleware);
  *                   items:
  *                     $ref: '#/components/schemas/Campaign'
  */
-router.get('/', (req: Request, res: Response) => {
-  // TODO: Replace with Campaign.find() with optional status filter
-  res.json({
-    campaigns: [
-      {
-        _id: '507f1f77bcf86cd799439011',
-        name: 'Q1 Product Launch',
-        goal: 'product_launch',
-        targetSegment: 'Mid-market SaaS CTOs',
-        startDate: '2026-01-15T00:00:00.000Z',
-        endDate: '2026-03-15T00:00:00.000Z',
-        contentBrief: 'Launch awareness campaign for new AI features',
-        platforms: ['linkedin', 'instagram'],
-        budget: 5000,
-        successMetric: '50 demo requests',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ],
-  });
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const query: Record<string, any> = {};
+    if (req.query.status) {
+      query.status = req.query.status;
+    }
+
+    const campaigns = await Campaign.find(query).sort({ createdAt: -1 });
+    res.json({ campaigns });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
 });
 
 /**
@@ -137,25 +129,23 @@ router.get('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Name, goal, startDate, and endDate are required
  */
-router.post('/', (req: Request, res: Response) => {
-  const { name, goal, startDate, endDate } = req.body;
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { name, goal, startDate, endDate } = req.body;
 
-  if (!name || !goal || !startDate || !endDate) {
-    res.status(400).json({ error: 'Name, goal, startDate, and endDate are required' });
-    return;
+    if (!name || !goal || !startDate || !endDate) {
+      res.status(400).json({ error: 'Name, goal, startDate, and endDate are required' });
+      return;
+    }
+
+    const campaign = await new Campaign(req.body).save();
+    res.status(201).json({
+      message: 'Campaign created',
+      campaign,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create campaign' });
   }
-
-  // TODO: Replace with new Campaign(req.body).save()
-  res.status(201).json({
-    message: 'Campaign created',
-    campaign: {
-      _id: 'new-campaign-id',
-      ...req.body,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  });
 });
 
 /**
@@ -230,18 +220,24 @@ router.post('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Campaign not found
  */
-router.put('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
 
-  // TODO: Replace with Campaign.findByIdAndUpdate(id, req.body, { new: true })
-  res.json({
-    message: 'Campaign updated',
-    campaign: {
-      _id: id,
-      ...req.body,
-      updatedAt: new Date().toISOString(),
-    },
-  });
+    const campaign = await Campaign.findByIdAndUpdate(id, req.body, { new: true });
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    res.json({
+      message: 'Campaign updated',
+      campaign,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update campaign' });
+  }
 });
 
 /**
@@ -284,11 +280,21 @@ router.put('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Campaign not found
  */
-router.delete('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
 
-  // TODO: Replace with Campaign.findByIdAndDelete(id)
-  res.json({ message: 'Campaign deleted' });
+    const campaign = await Campaign.findByIdAndDelete(id);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    res.json({ message: 'Campaign deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete campaign' });
+  }
 });
 
 /**
@@ -362,21 +368,31 @@ router.delete('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Campaign not found
  */
-router.put('/:id/status', (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { status } = req.body;
+router.put('/:id/status', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
-  const validStatuses = ['draft', 'active', 'paused', 'complete'];
-  if (!status || !validStatuses.includes(status)) {
-    res.status(400).json({ error: 'Invalid status. Must be one of draft, active, paused, complete' });
-    return;
+    const validStatuses = ['draft', 'active', 'paused', 'complete'];
+    if (!status || !validStatuses.includes(status)) {
+      res.status(400).json({ error: 'Invalid status. Must be one of draft, active, paused, complete' });
+      return;
+    }
+
+    const campaign = await Campaign.findByIdAndUpdate(id, { status }, { new: true });
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    res.json({
+      message: `Campaign status updated to ${status}`,
+      campaign: { _id: campaign._id, status: campaign.status },
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update campaign status' });
   }
-
-  // TODO: Replace with Campaign.findByIdAndUpdate(id, { status }, { new: true })
-  res.json({
-    message: `Campaign status updated to ${status}`,
-    campaign: { _id: id, status },
-  });
 });
 
 /**

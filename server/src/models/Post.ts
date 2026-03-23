@@ -36,6 +36,7 @@ export interface IPost extends Document {
   imageVariations: string[];
   scheduledAt: Date | null;
   publishedAt: Date | null;
+  approvedAt: Date | null;
   status: 'draft' | 'scheduled' | 'ready' | 'published' | 'archived';
   performance: IPostPerformance | null;
   notes: string;
@@ -85,6 +86,7 @@ const PostSchema = new Schema<IPost>(
     imageVariations: [{ type: String }],
     scheduledAt: { type: Date, default: null },
     publishedAt: { type: Date, default: null },
+    approvedAt: { type: Date, default: null },
     status: {
       type: String,
       default: 'draft',

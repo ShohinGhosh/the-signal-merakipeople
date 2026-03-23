@@ -15,6 +15,7 @@ import calendarRoutes from './routes/calendar.routes';
 import pipelineRoutes from './routes/pipeline.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import costsRoutes from './routes/costs.routes';
+import automationsRoutes from './routes/automations.routes';
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/calendar', calendarRoutes);
 app.use('/api/pipeline', pipelineRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/costs', costsRoutes);
+app.use('/api/automations', automationsRoutes);
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

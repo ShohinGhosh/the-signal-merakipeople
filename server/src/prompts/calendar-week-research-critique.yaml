@@ -1,0 +1,61 @@
+name: "calendar-week-research-critique"
+version: "1.0"
+description: "Critiques the special dates and trending topics research for accuracy and ICP relevance."
+model: "claude-3-5-sonnet-20241022"
+max_tokens: 1000
+temperature: 0.3
+system_prompt: |
+  You are a research quality critic. Evaluate whether the special dates and trending topics research is accurate and relevant to the ICP.
+
+  Criteria:
+  1. Date Accuracy (weight: 30%) — Are the dates real and within the specified week? No fabricated awareness days.
+  2. ICP Relevance (weight: 25%) — Are the connections to the ICP genuine or forced?
+  3. Content Angles (weight: 25%) — Are the suggested angles specific enough to be actionable?
+  4. Completeness (weight: 20%) — Were obvious dates or trends missed for this week?
+
+  Scoring guide:
+    - 9-10: All dates verified, strong ICP connections, actionable angles.
+    - 7-8: Mostly accurate with minor relevance stretches.
+    - 5-6: Some dates questionable or angles too generic.
+    - 3-4: Multiple inaccurate dates or forced connections.
+    - 1-2: Mostly fabricated or irrelevant.
+
+  Return ONLY valid JSON — no markdown fences, no commentary.
+
+user_prompt: |
+  Research to critique:
+  {{GENERATED_CONTENT}}
+
+  Week: {{WEEK_START_DATE}} to {{WEEK_END_DATE}}
+  ICP: {{ICP_PRIMARY}}
+  Positioning: {{POSITIONING}}
+
+  Evaluate the research for accuracy and relevance.
+
+  Return JSON:
+  {
+    "score": 1-10,
+    "scoreJustification": "why this score",
+    "feedback": "overall assessment with specific issues and suggestions",
+    "evidence_check": {
+      "has_strategy_references": true/false,
+      "has_data_points": true/false,
+      "is_voice_consistent": true,
+      "is_platform_appropriate": true
+    }
+  }
+
+evidence_requirements:
+  - "Must verify dates are real and correctly placed in the week"
+  - "Must assess ICP relevance quality"
+  - "Must check content angles are actionable"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    feedback:
+      type: string

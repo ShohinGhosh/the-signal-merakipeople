@@ -42,6 +42,35 @@ export interface MetricsTargets {
   trainingRevenueTarget?: number;
 }
 
+export interface PlatformBenchmarks {
+  linkedin: {
+    current_followers: number | null;
+    avg_impressions: number | null;
+    best_format: string | null;
+    pipeline_generating: boolean | null;
+    channel_purpose: string | null;
+    target_90d: number | null;
+  };
+  instagram: {
+    current_followers: number | null;
+    avg_reach: number | null;
+    best_format: string | null;
+    pipeline_generating: boolean | null;
+    channel_purpose: string | null;
+    target_90d: number | null;
+    is_active: boolean;
+  };
+}
+
+export interface RawInputs {
+  section1_businessContext: string;
+  section2_goalsMetrics: string;
+  section3_currentState: string;
+  section3a_platformMetrics: string;
+  section4_voicePositioning: string;
+  section5_campaigns: string;
+}
+
 export interface Strategy {
   _id: string;
   version: number;
@@ -61,9 +90,11 @@ export interface Strategy {
   objectionContent: Record<string, string>[];
   clientRoster: Record<string, any>[];
   metricsTargets: MetricsTargets;
+  platformBenchmarks?: PlatformBenchmarks;
   competitiveIntelligence: string;
   isCurrent: boolean;
   isComplete: boolean;
+  rawInputs: RawInputs;
   onboardingProgress: {
     currentSection: number;
     totalSections: number;
@@ -121,6 +152,11 @@ export interface SignalFeedEntry {
   status: 'pending' | 'confirmed' | 'in_calendar' | 'published' | 'archived';
   strategyUpdateProposed: Record<string, any>;
   strategyUpdateAccepted: boolean;
+  impactSummary?: {
+    postCount: number;
+    latestPostDate: string | null;
+    latestPostStatus: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -172,6 +208,7 @@ export interface Post {
   imageVariations: string[];
   scheduledAt: string | null;
   publishedAt: string | null;
+  approvedAt: string | null;
   status: 'draft' | 'scheduled' | 'ready' | 'published' | 'archived';
   performance: PostPerformance | null;
   notes: string;
@@ -251,12 +288,74 @@ export interface AnalyticsWeekly {
   createdAt: string;
 }
 
+// ============ Weekly Performance (Course-Correction) ============
+export interface TopPostSummary {
+  _id: string;
+  platform: string;
+  format: string;
+  contentPillar: string;
+  author: string;
+  publishedAt: string;
+  hookPreview: string;
+  performance: PostPerformance;
+}
+
+export interface FormatBreakdown {
+  format: string;
+  postsCount: number;
+  avgEngagement: number;
+  totalReach: number;
+}
+
+export interface PlatformSummaryItem {
+  postsCount: number;
+  avgEngagement: number;
+  totalReach: number;
+}
+
+export interface WoWMetric {
+  thisWeek: number;
+  lastWeek: number;
+  change: number;
+}
+
+export interface ContentToLead {
+  postId: string;
+  platform: string;
+  format: string;
+  contentPillar: string;
+  hookPreview: string;
+  leadCompany: string;
+  leadStage: string;
+  dealValue: number;
+}
+
+export interface WeeklyPerformance {
+  period: { start: string; end: string };
+  topPosts: TopPostSummary[];
+  formatBreakdown: FormatBreakdown[];
+  platformSummary: {
+    thisWeek: { linkedin: PlatformSummaryItem; instagram: PlatformSummaryItem };
+    lastWeek: { linkedin: PlatformSummaryItem; instagram: PlatformSummaryItem };
+  };
+  weekOverWeek: {
+    engagementRate: WoWMetric;
+    postsPublished: WoWMetric;
+    totalReach: WoWMetric;
+    leadsGenerated: WoWMetric;
+  };
+  contentToLeads: ContentToLead[];
+  platformBenchmarks: PlatformBenchmarks | null;
+  pillarTargets: { name: string; targetPercent: number }[];
+}
+
 // ============ Costs ============
 export interface CostLog {
   _id: string;
   timestamp: string;
   operation: string;
   model: string;
+  provider: string;
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
@@ -269,11 +368,180 @@ export interface CostLog {
 }
 
 export interface CostSummary {
-  totalCost: number;
+  period: { startDate: string; endDate: string };
+  totalCostUsd: number;
+  totalRequests: number;
   totalInputTokens: number;
   totalOutputTokens: number;
-  totalCalls: number;
-  byOperation: Record<string, { calls: number; cost: number }>;
+  byOperation: { operation: string; count: number; costUsd: number }[];
+  byModel: { model: string; count: number; costUsd: number }[];
+  byAgentType: {
+    generator: { count: number; costUsd: number };
+    critique: { count: number; costUsd: number };
+  };
+  averageCostPerRequest: number;
+}
+
+export interface DailyCost {
+  date: string;
+  calls: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+// ============ Calendar / Week Plan ============
+export interface SpecialDate {
+  date: string;
+  name: string;
+  type: 'holiday' | 'awareness_day' | 'industry_event' | 'seasonal';
+  relevance: 'high' | 'medium' | 'low';
+  icpConnection: string;
+  contentAngle: string;
+  pillarFit: string;
+}
+
+export interface TrendingTopic {
+  topic: string;
+  context: string;
+  relevance: 'high' | 'medium' | 'low';
+  icpConnection: string;
+  suggestedAngle: string;
+  timelinessWindow: string;
+}
+
+export interface WeekResearch {
+  specialDates: SpecialDate[];
+  trendingTopics: TrendingTopic[];
+  seasonalContext: string;
+}
+
+export interface GenerationInputs {
+  signalsUsed: number;
+  viralSignals: number;
+  specialDatesResearched: boolean;
+  campaigns: number;
+  research?: WeekResearch;
+  signals?: SignalFeedEntry[];
+}
+
+export interface WeekPlan {
+  weekStart: string;
+  weekEnd: string;
+  days: Record<string, Post[]>;
+  posts: Post[];
+  stats: {
+    total: number;
+    byStatus: Record<string, number>;
+    byPlatform: Record<string, number>;
+    byAuthor: Record<string, number>;
+    byPillar: Record<string, number>;
+  };
+  generationInputs?: GenerationInputs;
+  strategyContext?: {
+    platformTargets: { platform: string; weeklyTarget: number; bestFormats: string[]; bestPostingTimes: string[] }[];
+    contentPillars: { name: string; targetPercent: number; owner: string }[];
+  } | null;
+}
+
+// ============ Approve Progress ============
+export interface ApproveProgress {
+  total: number;
+  contentReady: number;
+  imagesReady: number;
+  allDone: boolean;
+  posts: { _id: string; status: string; hasDraft: boolean; hasImage: boolean }[];
+}
+
+// ============ Pending Performance ============
+export interface PendingPerformance {
+  pendingPosts: Post[];
+  count: number;
+  briefBlocked: boolean;
+}
+
+export interface WeekSignalSummary {
+  weekStart: string;
+  weekEnd: string;
+  contentSeeds: SignalFeedEntry[];
+  campaignFuel: SignalFeedEntry[];
+  viralSignals: SignalFeedEntry[];
+  totalCount: number;
+}
+
+export interface StrategyEvidence {
+  pillarMatch: string;
+  icpRelevance: string;
+  goalAlignment: string;
+}
+
+// ============ Automations ============
+export interface AgentInfo {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  platform?: string;
+  format?: string;
+}
+
+export interface AgentLastRun {
+  _id: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  itemsProcessed: number;
+  itemsFailed: number;
+  totalCostUsd: number;
+  durationMs: number;
+}
+
+export interface AgentStatus {
+  agent: AgentInfo;
+  eligibleCount: number;
+  isRunning: boolean;
+  lastRun: AgentLastRun | null;
+}
+
+export interface AgentRunItem {
+  itemId: string;
+  itemType: string;
+  status: 'success' | 'failed' | 'skipped';
+  error?: string;
+  outputId?: string;
+}
+
+export interface AgentRun {
+  _id: string;
+  agentId: string;
+  agentName: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string | null;
+  itemsFound: number;
+  itemsProcessed: number;
+  itemsFailed: number;
+  totalCostUsd: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalIterations: number;
+  results?: AgentRunItem[];
+  error: string;
+  triggeredBy: string;
+  durationMs: number;
+  createdAt: string;
+}
+
+// ============ Settings / Integrations ============
+export interface MetaIntegration {
+  connected: boolean;
+  accessToken?: string;
+  pageId?: string;
+  pageName?: string;
+  igBusinessAccountId?: string;
+  igUsername?: string;
+  connectedAt?: string;
 }
 
 // ============ Signal Tags ============

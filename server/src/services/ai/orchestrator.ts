@@ -1,6 +1,7 @@
 import { callAI, AICallResult, AIProvider } from './aiClient';
 import { buildPrompt } from './promptManager';
 import { logCost, calculateCost } from './costTracker';
+import { extractJSON } from './jsonExtractor';
 
 export interface OrchestratorInput {
   /** Name of the generator prompt YAML (without .yaml) */
@@ -199,12 +200,7 @@ export async function runAgentCritiqueLoop(input: OrchestratorInput): Promise<Or
   }
 
   const finalContent = bestResult!.content;
-  let parsed: Record<string, any> | null = null;
-  try {
-    parsed = JSON.parse(finalContent);
-  } catch {
-    // Content is not JSON, that's fine
-  }
+  const parsed = extractJSON(finalContent);
 
   // Extract evidence from the final content and critique
   const evidence = extractEvidence(finalContent, bestResult!.critique);
@@ -231,7 +227,8 @@ function extractEvidence(content: string, critique: CritiqueResult): EvidenceCit
   const dataPoints: string[] = [];
 
   try {
-    const parsed = JSON.parse(content);
+    const parsed = extractJSON(content);
+    if (!parsed) throw new Error('No JSON found');
 
     // Extract from evidence object if present (post generators, outreach drafters)
     if (parsed.evidence?.claims && Array.isArray(parsed.evidence.claims)) {

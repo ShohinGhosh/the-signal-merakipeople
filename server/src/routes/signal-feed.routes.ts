@@ -1,5 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { SignalFeed } from '../models/SignalFeed';
+import { Post } from '../models/Post';
+import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
+import { gatherEvidenceContext } from '../services/ai/evidenceEngine';
 
 const router = Router();
 
@@ -68,47 +72,81 @@ router.use(authMiddleware);
  *                   type: string
  *                   example: rawText, author, and tags are required
  */
-router.post('/', (req: Request, res: Response) => {
-  const { rawText, author, tags } = req.body;
+router.post('/', async (req: Request, res: Response) => {
+  const { rawText, author, tags, urlReference } = req.body;
 
   if (!rawText || !author || !tags) {
     res.status(400).json({ error: 'rawText, author, and tags are required' });
     return;
   }
 
-  // TODO: Replace with new SignalFeed(req.body).save() + AI classification via orchestrator
-  res.status(201).json({
-    message: 'Signal feed entry created',
-    entry: {
-      _id: 'new-signal-id',
-      rawText,
+  try {
+    const entry = await new SignalFeed({
       author,
+      rawText,
       tags,
-      urlReference: req.body.urlReference || '',
-      aiClassification: {
-        insightType: 'market_signal',
-        contentPillar: 'thought_leadership',
-        timeliness: 'timely',
-        strategyRelevance: 'High — aligns with ICP pain points',
-        contradictions: [],
-        confidence: 0.85,
-        evidence: {
-          strategyReferences: ['icpPrimary.painPoints'],
-          reasoning: 'AI classification pending',
-        },
-        critiqueScore: 0,
-        critiqueIterations: 0,
-        critiqueFeedback: '',
-      },
-      routing: 'content_seed',
-      campaignId: null,
+      urlReference: urlReference || '',
       status: 'pending',
-      strategyUpdateProposed: null,
-      strategyUpdateAccepted: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  });
+    }).save();
+
+    // Return 201 immediately; AI classification runs in background
+    res.status(201).json({ message: 'Signal feed entry created', entry });
+
+    // --- Background AI classification (non-blocking) ---
+    (async () => {
+      try {
+        const evidenceContext = await gatherEvidenceContext(author);
+
+        const result = await runAgentCritiqueLoop({
+          generatorPrompt: 'signal-feed-classifier',
+          critiquePrompt: 'signal-feed-critique',
+          context: {
+            ...evidenceContext,
+            SIGNAL_TEXT: rawText,
+            SIGNAL_TAGS: tags.join(', '),
+            SIGNAL_AUTHOR: author,
+          },
+          operation: 'classify-signal',
+          user: author,
+          relatedId: entry._id.toString(),
+          relatedCollection: 'SignalFeed',
+        });
+
+        // Build update payload from parsed AI result
+        const parsed = result.parsed || {};
+        const updateFields: Record<string, any> = {
+          aiClassification: {
+            insightType: parsed.insightType || '',
+            contentPillar: parsed.contentPillar || '',
+            timeliness: parsed.timeliness || 'evergreen',
+            strategyRelevance: parsed.strategyRelevance || '',
+            contradictions: parsed.contradictions || [],
+            confidence: parsed.confidence ?? result.critique.score / 10,
+            evidence: {
+              strategyReferences: result.evidence.strategyReferences || [],
+              reasoning: parsed.reasoning || result.evidence.claims?.map((c: any) => c.claim).join('; ') || '',
+            },
+            critiqueScore: result.critique.score,
+            critiqueIterations: result.iterations,
+            critiqueFeedback: result.critique.feedback,
+          },
+          routing: parsed.routing || 'content_seed',
+        };
+
+        if (parsed.strategyUpdateProposed) {
+          updateFields.strategyUpdateProposed = parsed.strategyUpdateProposed;
+        }
+
+        await SignalFeed.findByIdAndUpdate(entry._id, updateFields);
+      } catch (aiErr) {
+        console.error(`AI classification failed for signal ${entry._id}:`, aiErr);
+        // Entry remains with status 'pending' — no data loss
+      }
+    })();
+  } catch (err) {
+    console.error('Failed to create signal feed entry:', err);
+    res.status(500).json({ error: 'Failed to create signal feed entry' });
+  }
 });
 
 /**
@@ -197,20 +235,271 @@ router.post('/', (req: Request, res: Response) => {
  *                       type: number
  *                       example: 3
  */
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
 
-  // TODO: Replace with SignalFeed.find() with filters + pagination
-  res.json({
-    entries: [],
-    pagination: {
-      page,
-      limit,
-      total: 0,
-      totalPages: 0,
-    },
-  });
+  try {
+    const filter: Record<string, any> = {};
+
+    if (req.query.author) {
+      filter.author = req.query.author;
+    }
+    if (req.query.tag) {
+      filter.tags = { $in: [req.query.tag] };
+    }
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    if (req.query.routing) {
+      filter.routing = req.query.routing;
+    }
+    if (req.query.startDate || req.query.endDate) {
+      filter.createdAt = {};
+      if (req.query.startDate) {
+        filter.createdAt.$gte = new Date(req.query.startDate as string);
+      }
+      if (req.query.endDate) {
+        filter.createdAt.$lte = new Date(req.query.endDate as string);
+      }
+    }
+
+    const [entries, total] = await Promise.all([
+      SignalFeed.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      SignalFeed.countDocuments(filter),
+    ]);
+
+    // Enrich entries with impact summary (which posts were created from each signal)
+    const entryIds = entries.map((e: any) => e._id);
+    const impactPosts = await Post.find({
+      signalFeedId: { $in: entryIds },
+    })
+      .select('signalFeedId scheduledAt status')
+      .sort({ scheduledAt: -1 })
+      .lean();
+
+    // Build impact map
+    const impactMap: Record<string, { postCount: number; latestPostDate: string | null; latestPostStatus: string | null }> = {};
+    for (const post of impactPosts) {
+      const sid = String(post.signalFeedId);
+      if (!impactMap[sid]) {
+        impactMap[sid] = {
+          postCount: 0,
+          latestPostDate: post.scheduledAt ? post.scheduledAt.toISOString() : null,
+          latestPostStatus: post.status,
+        };
+      }
+      impactMap[sid].postCount++;
+    }
+
+    // Attach impact summary to each entry
+    const enrichedEntries = entries.map((entry: any) => ({
+      ...entry,
+      impactSummary: impactMap[String(entry._id)] || null,
+    }));
+
+    res.json({
+      entries: enrichedEntries,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err) {
+    console.error('Failed to list signal feed entries:', err);
+    res.status(500).json({ error: 'Failed to list signal feed entries' });
+  }
+});
+
+// ============ Quick Add (diary-style capture) ============
+
+/**
+ * @openapi
+ * /api/signal-feed/quick:
+ *   post:
+ *     tags:
+ *       - Signal Feed
+ *     summary: Quick-add a diary entry
+ *     description: Minimal-friction endpoint for diary-style signal capture. Only rawText is required — author is auto-detected from JWT, tags and URL are optional.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rawText
+ *             properties:
+ *               rawText:
+ *                 type: string
+ *                 example: Spotted a viral LinkedIn post about AI replacing recruiters — 50k impressions in 2 hours
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: [market_observation, inspired_by]
+ *               urlReference:
+ *                 type: string
+ *                 example: https://linkedin.com/post/viral-ai-post
+ *     responses:
+ *       201:
+ *         description: Signal captured and AI classification triggered
+ *       400:
+ *         description: rawText is required
+ */
+router.post('/quick', async (req: Request, res: Response) => {
+  const { rawText, tags, urlReference } = req.body;
+  const author = (req as any).user?.role || req.body.author;
+
+  if (!rawText) {
+    res.status(400).json({ error: 'rawText is required' });
+    return;
+  }
+
+  try {
+    const entry = await new SignalFeed({
+      author: author || 'shohini',
+      rawText,
+      tags: tags || [],
+      urlReference: urlReference || '',
+      status: 'pending',
+    }).save();
+
+    res.status(201).json({ message: 'Signal captured', entry });
+
+    // Background AI classification (reuse same logic as POST /)
+    (async () => {
+      try {
+        const evidenceContext = await gatherEvidenceContext(entry.author);
+
+        const result = await runAgentCritiqueLoop({
+          generatorPrompt: 'signal-feed-classifier',
+          critiquePrompt: 'signal-feed-critique',
+          context: {
+            ...evidenceContext,
+            SIGNAL_TEXT: rawText,
+            SIGNAL_TAGS: (tags || []).join(', '),
+            SIGNAL_AUTHOR: entry.author,
+          },
+          operation: 'classify-signal',
+          user: entry.author,
+          relatedId: entry._id.toString(),
+          relatedCollection: 'SignalFeed',
+        });
+
+        const parsed = result.parsed || {};
+        const updateFields: Record<string, any> = {
+          aiClassification: {
+            insightType: parsed.insightType || '',
+            contentPillar: parsed.contentPillar || '',
+            timeliness: parsed.timeliness || 'evergreen',
+            strategyRelevance: parsed.strategyRelevance || '',
+            contradictions: parsed.contradictions || [],
+            confidence: parsed.confidence ?? result.critique.score / 10,
+            evidence: {
+              strategyReferences: result.evidence.strategyReferences || [],
+              reasoning: parsed.reasoning || result.evidence.claims?.map((c: any) => c.claim).join('; ') || '',
+            },
+            critiqueScore: result.critique.score,
+            critiqueIterations: result.iterations,
+            critiqueFeedback: result.critique.feedback,
+          },
+          routing: parsed.routing || 'content_seed',
+        };
+
+        if (parsed.strategyUpdateProposed) {
+          updateFields.strategyUpdateProposed = parsed.strategyUpdateProposed;
+        }
+
+        await SignalFeed.findByIdAndUpdate(entry._id, updateFields);
+      } catch (aiErr) {
+        console.error(`AI classification failed for quick signal ${entry._id}:`, aiErr);
+      }
+    })();
+  } catch (err) {
+    console.error('Failed to create quick signal entry:', err);
+    res.status(500).json({ error: 'Failed to create signal entry' });
+  }
+});
+
+// ============ Week Summary (for calendar generation) ============
+
+/**
+ * @openapi
+ * /api/signal-feed/week-summary:
+ *   get:
+ *     tags:
+ *       - Signal Feed
+ *     summary: Get week's signal summary for calendar generation
+ *     description: Returns confirmed signal feed entries for a given week, categorized by routing type and viral signals. Used as input for content calendar generation.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: weekStart
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Monday of the target week (YYYY-MM-DD)
+ *         example: '2026-03-09'
+ *     responses:
+ *       200:
+ *         description: Week's signal summary
+ *       400:
+ *         description: weekStart is required
+ */
+router.get('/week-summary', async (req: Request, res: Response) => {
+  const weekStart = req.query.weekStart as string;
+  if (!weekStart) {
+    res.status(400).json({ error: 'weekStart query parameter is required' });
+    return;
+  }
+
+  try {
+    const start = new Date(weekStart);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    // Fetch confirmed content_seed and campaign_fuel signals for the week
+    const entries = await SignalFeed.find({
+      status: 'confirmed',
+      routing: { $in: ['content_seed', 'campaign_fuel'] },
+      createdAt: { $gte: start, $lte: end },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Also fetch market_observation / inspired_by tagged entries as viral signals
+    const viralSignals = await SignalFeed.find({
+      tags: { $in: ['market_observation', 'inspired_by'] },
+      createdAt: { $gte: start, $lte: end },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      weekStart: start.toISOString().slice(0, 10),
+      weekEnd: end.toISOString().slice(0, 10),
+      contentSeeds: entries.filter((e: any) => e.routing === 'content_seed'),
+      campaignFuel: entries.filter((e: any) => e.routing === 'campaign_fuel'),
+      viralSignals,
+      totalCount: entries.length,
+    });
+  } catch (err) {
+    console.error('Failed to get week summary:', err);
+    res.status(500).json({ error: 'Failed to get week summary' });
+  }
 });
 
 /**
@@ -249,36 +538,20 @@ router.get('/', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Signal feed entry not found
  */
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with SignalFeed.findById(id)
-  res.json({
-    _id: id,
-    rawText: 'Mock signal entry',
-    author: 'shohini',
-    tags: ['mock'],
-    urlReference: '',
-    aiClassification: {
-      insightType: 'market_signal',
-      contentPillar: 'thought_leadership',
-      timeliness: 'timely',
-      strategyRelevance: '',
-      contradictions: [],
-      confidence: 0,
-      evidence: { strategyReferences: [], reasoning: '' },
-      critiqueScore: 0,
-      critiqueIterations: 0,
-      critiqueFeedback: '',
-    },
-    routing: 'content_seed',
-    campaignId: null,
-    status: 'pending',
-    strategyUpdateProposed: null,
-    strategyUpdateAccepted: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  try {
+    const entry = await SignalFeed.findById(id);
+    if (!entry) {
+      res.status(404).json({ error: 'Signal feed entry not found' });
+      return;
+    }
+    res.json(entry);
+  } catch (err) {
+    console.error('Failed to get signal feed entry:', err);
+    res.status(500).json({ error: 'Failed to get signal feed entry' });
+  }
 });
 
 /**
@@ -331,18 +604,24 @@ router.get('/:id', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Signal feed entry not found
  */
-router.put('/:id/confirm', (req: Request, res: Response) => {
+router.put('/:id/confirm', async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // TODO: Replace with SignalFeed.findByIdAndUpdate(id, { status: 'confirmed' }, { new: true })
-  res.json({
-    message: 'Routing confirmed',
-    entry: {
-      _id: id,
-      status: 'confirmed',
-      routing: 'content_seed',
-    },
-  });
+  try {
+    const entry = await SignalFeed.findByIdAndUpdate(
+      id,
+      { status: 'confirmed' },
+      { new: true }
+    );
+    if (!entry) {
+      res.status(404).json({ error: 'Signal feed entry not found' });
+      return;
+    }
+    res.json({ message: 'Routing confirmed', entry });
+  } catch (err) {
+    console.error('Failed to confirm signal feed entry:', err);
+    res.status(500).json({ error: 'Failed to confirm signal feed entry' });
+  }
 });
 
 /**
@@ -425,7 +704,7 @@ router.put('/:id/confirm', (req: Request, res: Response) => {
  *                   type: string
  *                   example: Signal feed entry not found
  */
-router.put('/:id/override', (req: Request, res: Response) => {
+router.put('/:id/override', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { routing, campaignId } = req.body;
 
@@ -437,16 +716,21 @@ router.put('/:id/override', (req: Request, res: Response) => {
     return;
   }
 
-  // TODO: Replace with SignalFeed.findByIdAndUpdate(id, { routing, campaignId, status: 'confirmed' }, { new: true })
-  res.json({
-    message: `Routing overridden to ${routing}`,
-    entry: {
-      _id: id,
-      routing,
-      campaignId: campaignId || null,
-      status: 'confirmed',
-    },
-  });
+  try {
+    const entry = await SignalFeed.findByIdAndUpdate(
+      id,
+      { routing, campaignId: campaignId || null, status: 'confirmed' },
+      { new: true }
+    );
+    if (!entry) {
+      res.status(404).json({ error: 'Signal feed entry not found' });
+      return;
+    }
+    res.json({ message: `Routing overridden to ${routing}`, entry });
+  } catch (err) {
+    console.error('Failed to override signal feed entry:', err);
+    res.status(500).json({ error: 'Failed to override signal feed entry' });
+  }
 });
 
 /**

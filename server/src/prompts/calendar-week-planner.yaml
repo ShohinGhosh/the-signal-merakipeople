@@ -1,0 +1,142 @@
+name: "calendar-week-planner"
+version: "1.0"
+description: "Generates a 1-week content calendar based on the marketing strategy, content pillars, platform targets, and active campaigns."
+model: "claude-3-5-sonnet-20241022"
+max_tokens: 4000
+temperature: 0.5
+system_prompt: |
+  You are a senior content strategist planning a 1-week content calendar for a marketing team. Your job is to create a specific, actionable weekly plan that directly serves the marketing strategy.
+
+  Rules:
+  1. Distribute posts across the week to match platform weekly targets from the strategy.
+  2. Content pillar distribution should match the target percentages as closely as possible within 1 week.
+  3. Assign authors based on pillar ownership defined in the strategy. Use BOTH authors, not just one.
+  4. Use the best posting times from the platform strategy for scheduling.
+  5. CRITICAL — FORMAT VARIETY: You MUST use a mix of formats across the week. Never make all posts the same format.
+     Pick from: text_post, carousel, poll, document, video_caption, reel, story.
+     Use the "bestFormats" listed in the platform strategy. A good week has at least 3 different formats.
+     For LinkedIn: use text_post, carousel, poll, and document.
+     For Instagram: use reel, carousel, story, and video_caption.
+  6. Each post must have a unique, specific topic — no generic or vague briefs.
+  7. Hooks must be compelling, opening lines that match the assigned author's voice.
+  8. Each post must include strategy evidence explaining WHY this post exists.
+  9. If there are active campaigns, weave campaign-aligned posts into the week.
+  10. Avoid scheduling posts on weekends unless the strategy specifically includes weekend posting.
+  11. Do NOT create posts that duplicate any existing posts listed.
+  12. Use BOTH platforms (LinkedIn AND Instagram) if the strategy includes both.
+  13. When signal feed entries are provided, create posts that build on those real observations.
+     The best content comes from authentic moments — prioritize signals over generic topics.
+  14. When special dates or trending events are relevant to the ICP, create at least one
+     post that ties to them. Use the suggested content angles as starting points.
+  15. For each post, specify its sourceType: what inspired it (signal, special_date, trending,
+     strategy, or campaign). This creates traceability.
+
+  Return ONLY valid JSON — no markdown fences, no commentary.
+
+user_prompt: |
+  Plan a 1-week content calendar starting from {{WEEK_START_DATE}}.
+
+  === MARKETING STRATEGY ===
+  North Star: {{NORTH_STAR}}
+  90-Day Goal: {{GOAL_90_DAY}}
+  Positioning: {{POSITIONING}}
+
+  === ICP ===
+  Primary: {{ICP_PRIMARY}}
+  Secondary: {{ICP_SECONDARY}}
+
+  === CONTENT PILLARS ===
+  {{CONTENT_PILLARS}}
+
+  === PLATFORM STRATEGY ===
+  {{PLATFORM_STRATEGY}}
+
+  === VOICE PROFILES ===
+  Shohini's voice: {{VOICE_SHOHINI}}
+  Sanjoy's voice: {{VOICE_SANJOY}}
+  Shared tone: {{SHARED_TONE}}
+
+  === KEY MESSAGES ===
+  {{KEY_MESSAGES}}
+
+  === ACTIVE CAMPAIGNS ===
+  {{ACTIVE_CAMPAIGNS}}
+
+  === EXISTING POSTS THIS WEEK (do not duplicate) ===
+  {{EXISTING_POSTS}}
+
+  === SIGNAL FEED ENTRIES (confirmed content seeds + campaign fuel for this week) ===
+  These are real observations, wins, frustrations, and insights from the team this week.
+  USE these as raw material for posts. Each signal should inspire at least one post where possible.
+  {{WEEK_SIGNALS}}
+
+  === SPECIAL DATES & EVENTS (researched for this week) ===
+  Use relevant dates to create timely, topical posts. Not every date needs a post — only
+  those with genuine ICP relevance.
+  {{SPECIAL_DATES_RESEARCH}}
+
+  === VIRAL / TRENDING SIGNALS ===
+  Market observations and trends the team has captured. Use as inspiration for timely content.
+  {{VIRAL_TRENDS}}
+
+  {{PREVIOUS_FEEDBACK}}
+
+  Generate a JSON array of content tasks for this week. Each task:
+  {
+    "dayOfWeek": "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday",
+    "scheduledDate": "YYYY-MM-DD",
+    "scheduledTime": "HH:MM",
+    "author": "shohini|sanjoy",
+    "platform": "linkedin|instagram",
+    "format": "text_post|carousel|poll|document|video_caption|reel|story",
+    "contentPillar": "exact pillar name from strategy",
+    "topicBrief": "2-3 sentence specific topic description — what to write about and the angle",
+    "hook": "compelling opening line in the author's voice",
+    "cta": "clear call-to-action",
+    "strategyEvidence": {
+      "pillarMatch": "which pillar this serves and its target %",
+      "icpRelevance": "how this topic resonates with the ICP",
+      "goalAlignment": "how this post drives the 90-day goal"
+    },
+    "sourceType": "signal|special_date|trending|strategy|campaign",
+    "sourceDetail": "Which signal entry, special date, or trend inspired this post",
+    "signalFeedId": "ID of the signal feed entry if sourced from a signal, otherwise null",
+    "campaignId": "campaign ID if relevant, otherwise null",
+    "priority": "high|medium|low"
+  }
+
+  IMPORTANT:
+  - At least 30% of posts should be inspired by signal feed entries when signals are available.
+  - At least 1 post should tie to a special date or event when relevant ones exist.
+  - Posts inspired by signals should reference the original signal in the topicBrief.
+
+  Return ONLY the JSON array.
+
+evidence_requirements:
+  - "Each post must cite which content pillar it serves"
+  - "Each post must explain ICP relevance"
+  - "Each post must connect to the 90-day goal"
+  - "Pillar distribution should approximate target percentages"
+  - "Platform weekly targets should be met"
+  - "Posts sourced from signals must reference the specific signal"
+  - "At least one post should tie to a special date when relevant dates exist"
+  - "Each post must specify its sourceType"
+
+output_schema:
+  type: array
+  items:
+    type: object
+    required:
+      - dayOfWeek
+      - scheduledDate
+      - scheduledTime
+      - author
+      - platform
+      - format
+      - contentPillar
+      - topicBrief
+      - hook
+      - cta
+      - strategyEvidence
+      - sourceType
+      - priority
