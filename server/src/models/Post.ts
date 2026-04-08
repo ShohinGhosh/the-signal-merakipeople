@@ -20,7 +20,7 @@ export interface IPost extends Document {
   signalFeedId: Types.ObjectId | null;
   campaignId: Types.ObjectId | null;
   author: 'shohini' | 'sanjoy';
-  platform: 'linkedin' | 'instagram' | 'both';
+  platform: 'linkedin' | 'instagram' | 'facebook' | 'both';
   format: 'text_post' | 'carousel' | 'poll' | 'document' | 'video_caption' | 'reel' | 'story';
   contentPillar: string;
   draftContent: string;
@@ -30,10 +30,11 @@ export interface IPost extends Document {
   hashtags: string[];
   linkedinHook: string;
   instagramHook: string;
-  imageType: 'post_graphic' | 'thumbnail' | 'carousel_cover' | 'quote_card' | null;
+  imageType: 'post_graphic' | 'thumbnail' | 'carousel_cover' | 'carousel_pdf' | 'quote_card' | null;
   imagePrompt: string;
   imageUrl: string;
   imageVariations: string[];
+  carouselPdfUrl: string;
   scheduledAt: Date | null;
   publishedAt: Date | null;
   approvedAt: Date | null;
@@ -57,7 +58,7 @@ const PostSchema = new Schema<IPost>(
     signalFeedId: { type: Schema.Types.ObjectId, ref: 'SignalFeed', default: null },
     campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', default: null },
     author: { type: String, required: true, enum: ['shohini', 'sanjoy'] },
-    platform: { type: String, required: true, enum: ['linkedin', 'instagram', 'both'] },
+    platform: { type: String, required: true, enum: ['linkedin', 'instagram', 'facebook', 'both'] },
     format: {
       type: String,
       enum: ['text_post', 'carousel', 'poll', 'document', 'video_caption', 'reel', 'story'],
@@ -78,12 +79,13 @@ const PostSchema = new Schema<IPost>(
     instagramHook: { type: String, default: '' },
     imageType: {
       type: String,
-      enum: ['post_graphic', 'thumbnail', 'carousel_cover', 'quote_card', null],
+      enum: ['post_graphic', 'thumbnail', 'carousel_cover', 'carousel_pdf', 'quote_card', null],
       default: null,
     },
     imagePrompt: { type: String, default: '' },
     imageUrl: { type: String, default: '' },
     imageVariations: [{ type: String }],
+    carouselPdfUrl: { type: String, default: '' },
     scheduledAt: { type: Date, default: null },
     publishedAt: { type: Date, default: null },
     approvedAt: { type: Date, default: null },

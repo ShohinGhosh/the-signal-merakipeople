@@ -1,7 +1,7 @@
 name: "outreach-critique"
 version: "1.0"
 description: "Critiques outreach drafts for personalization depth, tone appropriateness, relevance to the lead's context, and channel compliance."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 1500
 temperature: 0.4
 system_prompt: |

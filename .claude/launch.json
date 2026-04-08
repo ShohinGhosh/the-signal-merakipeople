@@ -5,15 +5,13 @@
       "name": "server-dev",
       "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
       "runtimeArgs": ["server/dev.js"],
-      "port": 5000,
-      "autoPort": false
+      "port": 5001
     },
     {
       "name": "client-dev",
       "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
       "runtimeArgs": ["client/dev.js"],
-      "port": 3000,
-      "autoPort": false
+      "port": 3000
     }
   ]
 }

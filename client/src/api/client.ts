@@ -82,6 +82,8 @@ export const postsAPI = {
   generate: (data: any) => api.post('/posts/generate', data),
   regenerate: (id: string, data: { instruction: string; field: 'text' | 'image' }) =>
     api.post(`/posts/${id}/regenerate`, data),
+  generateContent: (id: string, force?: boolean) =>
+    api.post(`/posts/${id}/generate-content`, { force: force || false }),
   generateImage: (id: string, data: { imageType: string; customPrompt?: string }) =>
     api.post(`/posts/${id}/generate-image`, data),
   list: (params?: Record<string, any>) => api.get('/posts', { params }),
@@ -96,8 +98,8 @@ export const calendarAPI = {
     api.get('/calendar', { params }),
   getWeek: (weekStart?: string) =>
     api.get('/calendar/week', { params: weekStart ? { weekStart } : {} }),
-  generateWeek: (weekStart?: string) =>
-    api.post('/calendar/generate-week', weekStart ? { weekStart } : {}),
+  generateWeek: (weekStart?: string, platforms?: string[]) =>
+    api.post('/calendar/generate-week', { ...(weekStart ? { weekStart } : {}), ...(platforms?.length ? { platforms } : {}) }),
   updateTaskStatus: (postId: string, status: string) =>
     api.put(`/calendar/task/${postId}/status`, { status }),
   getGaps: () => api.get('/calendar/gaps'),
@@ -108,6 +110,7 @@ export const calendarAPI = {
     api.post('/calendar/approve-week', { weekStart }),
   approveProgress: (weekStart: string) =>
     api.get('/calendar/approve-progress', { params: { weekStart } }),
+  generationProgress: () => api.get('/calendar/generation-progress'),
 };
 
 // ============ Pipeline API ============
@@ -139,6 +142,59 @@ export const costsAPI = {
     api.get('/costs/summary', { params }),
   daily: (params?: { startDate?: string; endDate?: string }) =>
     api.get('/costs/daily', { params }),
+};
+
+// ============ Journal API ============
+export const journalAPI = {
+  create: (data: { rawText: string; author: string; entryType?: string; priority?: 'normal' | 'high' }) =>
+    api.post('/journal', data),
+  reanalyse: (id: string) => api.post(`/journal/${id}/analyse`),
+  accept: (id: string) => api.put(`/journal/${id}/accept`),
+  edit: (id: string, data: Record<string, any>) => api.put(`/journal/${id}/edit`, data),
+  discard: (id: string) => api.put(`/journal/${id}/discard`),
+  archive: (id: string) => api.put(`/journal/${id}/archive`),
+  autoRegenStatus: () => api.get('/journal/auto-regen-status'),
+  autoRegenReset: () => api.post('/journal/auto-regen-reset'),
+  list: (params?: Record<string, any>) => api.get('/journal', { params }),
+  get: (id: string) => api.get(`/journal/${id}`),
+};
+
+// ============ Feedback API ============
+export const feedbackAPI = {
+  submit: (data: {
+    postId: string;
+    field: string;
+    rating: 'up' | 'down';
+    feedbackText?: string;
+    quickFixUsed?: string;
+    contentBefore?: string;
+    contentAfter?: string;
+    format?: string;
+    platform?: string;
+    contentPillar?: string;
+    author?: string;
+  }) => api.post('/feedback', data),
+  quickFixes: (params: { format?: string; platform?: string; field?: string }) =>
+    api.get('/feedback/quick-fixes', { params }),
+  intelligence: (params?: { format?: string; platform?: string; contentPillar?: string }) =>
+    api.get('/feedback/intelligence', { params }),
+  stats: () => api.get('/feedback/stats'),
+};
+
+// ============ Content History API ============
+export const contentHistoryAPI = {
+  upload: (entries: any[]) => api.post('/content-history/upload', { entries }),
+  list: (params?: Record<string, any>) => api.get('/content-history', { params }),
+  summary: () => api.get('/content-history/summary'),
+  insights: (params?: Record<string, any>) => api.get('/content-history/insights', { params }),
+  clear: () => api.delete('/content-history'),
+};
+
+// ============ Prompts API ============
+export const promptsAPI = {
+  list: () => api.get('/prompts'),
+  get: (name: string) => api.get(`/prompts/${name}`),
+  update: (name: string, content: string) => api.put(`/prompts/${name}`, { content }),
 };
 
 // ============ Automations API ============

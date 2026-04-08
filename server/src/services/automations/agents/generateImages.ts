@@ -3,16 +3,29 @@ import { AgentRun, IAgentRunItem } from '../../../models/AgentRun';
 import { runAgentCritiqueLoop } from '../../ai/orchestrator';
 import { gatherEvidenceContext } from '../../ai/evidenceEngine';
 import { generateAndStoreImage, isImageGenerationAvailable } from '../../images/imageService';
+import { generateCarouselPdf } from '../../images/carouselPdfService';
 
 /**
  * Generate Images Agent.
- * Takes ready/scheduled posts with content but no image prompt,
- * and generates image prompts for them.
+ * Takes ready/scheduled/draft posts with content but no image prompt,
+ * and generates format-appropriate visual assets:
+ *
+ * - Image posts (reel, story): AI-generated image via fal.ai (1:1)
+ * - Video posts (video_caption): AI-generated thumbnail via fal.ai (16:9)
+ * - Carousel posts: PDF from slide outline + cover image
+ * - Text posts, polls, documents: Skipped (no visual needed)
  */
+
+/** Formats that need visual asset generation */
+const VISUAL_FORMATS = ['carousel', 'reel', 'story', 'video_caption'];
+
+/** Formats that are text-only and need no image */
+const TEXT_ONLY_FORMATS = ['text_post', 'poll', 'document'];
 
 export async function countEligible(): Promise<number> {
   return Post.countDocuments({
     status: { $in: ['ready', 'scheduled', 'draft'] },
+    format: { $in: VISUAL_FORMATS },
     draftContent: { $nin: ['', null] },
     imagePrompt: { $in: ['', null] },
   });
@@ -24,6 +37,7 @@ export async function execute(
 ): Promise<void> {
   const posts = await Post.find({
     status: { $in: ['ready', 'scheduled', 'draft'] },
+    format: { $in: VISUAL_FORMATS },
     draftContent: { $nin: ['', null] },
     imagePrompt: { $in: ['', null] },
   }).sort({ scheduledAt: 1 });
@@ -35,6 +49,29 @@ export async function execute(
 
   for (const post of posts) {
     try {
+      const format = post.format?.toLowerCase() || '';
+
+      // ── CAROUSEL: Generate PDF from slide outline ──
+      if (format === 'carousel') {
+        await handleCarousel(post);
+        run.itemsProcessed += 1;
+        run.results.push({
+          itemId: String(post._id),
+          itemType: 'Post',
+          status: 'success',
+          outputId: String(post._id),
+        } as IAgentRunItem);
+        await run.save();
+        console.log(`[Agent generate-images] Carousel PDF generated for post ${post._id}`);
+        continue;
+      }
+
+      // ── VIDEO: Generate thumbnail (16:9) ──
+      // ── IMAGE: Generate post graphic (1:1) ──
+      const isVideo = format === 'video_caption';
+      const imageType = isVideo ? 'thumbnail' : 'post_graphic';
+      const aspectRatio = isVideo ? '16:9' : '1:1';
+
       const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
 
       const result = await runAgentCritiqueLoop({
@@ -44,8 +81,10 @@ export async function execute(
           ...evidenceContext,
           POST_CONTENT: post.draftContent || post.finalContent || '',
           PLATFORM: post.platform,
-          IMAGE_TYPE: post.imageType || 'post_graphic',
-          CUSTOM_PROMPT: '',
+          IMAGE_TYPE: imageType,
+          CUSTOM_PROMPT: isVideo
+            ? 'Create a compelling video thumbnail. Bold visual, high contrast, eye-catching. Include visual cues that suggest video content (motion, energy). 16:9 aspect ratio.'
+            : '',
           CONTENT_PILLAR: post.contentPillar || '',
         },
         operation: 'agent-generate-image-prompt',
@@ -60,19 +99,20 @@ export async function execute(
       const generatedPrompt = parsed.imagePrompt || parsed.prompt || result.content;
 
       post.imagePrompt = generatedPrompt;
-      if (!post.imageType) post.imageType = 'post_graphic';
+      post.imageType = imageType;
 
-      // Generate actual images via fal.ai + upload to S3
+      // Generate actual images via fal.ai + upload to storage
       if (isImageGenerationAvailable()) {
         try {
           const imageResult = await generateAndStoreImage(
             generatedPrompt,
             String(post._id),
-            1
+            1,
+            aspectRatio as any
           );
           post.imageUrl = imageResult.imageUrl;
           post.imageVariations = imageResult.imageVariations;
-          console.log(`[Agent generate-images] Image rendered for post ${post._id}: ${imageResult.imageUrl}`);
+          console.log(`[Agent generate-images] ${isVideo ? 'Thumbnail' : 'Image'} rendered for post ${post._id}: ${imageResult.imageUrl}`);
         } catch (imgErr: any) {
           console.warn(`[Agent generate-images] Image rendering failed for post ${post._id}, prompt saved:`, imgErr.message);
         }
@@ -93,7 +133,7 @@ export async function execute(
       } as IAgentRunItem);
       await run.save();
 
-      console.log(`[Agent generate-images] Generated image prompt for post ${post._id}`);
+      console.log(`[Agent generate-images] Generated ${isVideo ? 'thumbnail' : 'image'} prompt for post ${post._id}`);
     } catch (err: any) {
       run.itemsFailed += 1;
       run.results.push({
@@ -106,4 +146,45 @@ export async function execute(
       console.error(`[Agent generate-images] Failed post ${post._id}:`, err.message);
     }
   }
+}
+
+/**
+ * Handle carousel format: generate PDF from slide outline + optional cover image
+ */
+async function handleCarousel(post: InstanceType<any>): Promise<void> {
+  const slides = post.draftCarouselOutline || [];
+
+  if (slides.length > 0) {
+    // Generate the carousel PDF
+    const pdfResult = await generateCarouselPdf(
+      slides,
+      String(post._id),
+      post.contentPillar || 'Carousel',
+      post.author || ''
+    );
+    post.carouselPdfUrl = pdfResult.pdfUrl;
+    post.imageType = 'carousel_pdf';
+    post.imagePrompt = `Carousel PDF: ${slides.length} slides`;
+    console.log(`[Agent generate-images] Carousel PDF: ${pdfResult.slideCount} slides → ${pdfResult.pdfUrl}`);
+  }
+
+  // Also generate a cover image for the carousel (first slide as visual)
+  if (isImageGenerationAvailable() && slides.length > 0) {
+    const hookSlide = slides.find((s: any) => s.type === 'hook') || slides[0];
+    const coverPrompt = `Clean, bold typographic design for a LinkedIn carousel cover slide. Content: "${hookSlide.content.substring(0, 100)}". Modern, professional, eye-catching. Solid background with accent color.`;
+
+    try {
+      const imageResult = await generateAndStoreImage(
+        coverPrompt,
+        String(post._id),
+        1
+      );
+      post.imageUrl = imageResult.imageUrl;
+      post.imageVariations = imageResult.imageVariations;
+    } catch (imgErr: any) {
+      console.warn(`[Agent generate-images] Carousel cover image failed for ${post._id}:`, imgErr.message);
+    }
+  }
+
+  await post.save();
 }

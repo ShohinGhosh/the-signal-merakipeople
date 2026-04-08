@@ -5,10 +5,13 @@ import type { User, AuthState } from '../types';
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  switchUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+// Default credentials for auto-login
+const DEFAULT_EMAIL = 'shohini@merakipeople.com';
+const DEFAULT_PASSWORD = 'shohini123';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -17,24 +20,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
     loading: true,
   });
-
-  useEffect(() => {
-    const token = localStorage.getItem('signal_token');
-    const userStr = localStorage.getItem('signal_user');
-
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr) as User;
-        setState({ user, token, isAuthenticated: true, loading: false });
-      } catch {
-        localStorage.removeItem('signal_token');
-        localStorage.removeItem('signal_user');
-        setState((s) => ({ ...s, loading: false }));
-      }
-    } else {
-      setState((s) => ({ ...s, loading: false }));
-    }
-  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authAPI.login(email, password);
@@ -50,12 +35,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, token: null, isAuthenticated: false, loading: false });
   }, []);
 
-  const switchUser = useCallback(() => {
-    logout();
-  }, [logout]);
+  useEffect(() => {
+    const token = localStorage.getItem('signal_token');
+    const userStr = localStorage.getItem('signal_user');
+
+    if (token && userStr) {
+      try {
+        const user = JSON.parse(userStr) as User;
+        setState({ user, token, isAuthenticated: true, loading: false });
+        return;
+      } catch {
+        localStorage.removeItem('signal_token');
+        localStorage.removeItem('signal_user');
+      }
+    }
+
+    // Auto-login with default credentials
+    (async () => {
+      try {
+        await login(DEFAULT_EMAIL, DEFAULT_PASSWORD);
+      } catch {
+        setState((s) => ({ ...s, loading: false }));
+      }
+    })();
+  }, [login]);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, switchUser }}>
+    <AuthContext.Provider value={{ ...state, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

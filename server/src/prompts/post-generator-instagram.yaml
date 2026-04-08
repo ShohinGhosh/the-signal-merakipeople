@@ -1,7 +1,7 @@
 name: "post-generator-instagram"
 version: "1.0"
 description: "Generates Instagram posts with captions, format selection, story companions, and audio mood suggestions, grounded in strategy and author voice."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 3000
 temperature: 0.7
 system_prompt: |
@@ -48,25 +48,47 @@ system_prompt: |
     - Explain how each piece of feedback was incorporated.
 
 user_prompt: |
-  Strategy context:
-  {{STRATEGY_CONTEXT}}
-
-  Author voice profile:
-  {{AUTHOR_VOICE}}
-
-  Campaign context (if active):
-  {{CAMPAIGN_CONTEXT}}
-
-  Performance context (recent post performance):
-  {{PERFORMANCE_CONTEXT}}
-
-  Signal feed entry (content seed):
+  === PRIMARY INPUT — THIS IS WHAT THE POST MUST BE ABOUT ===
   {{SIGNAL_FEED_ENTRY}}
 
-  Previous critique feedback (if iterating):
+  Topic brief (additional context):
+  {{SIGNAL_TEXT}}
+
+  Content pillar: {{CONTENT_PILLAR}}
+  Format: {{FORMAT}}
+
+  CRITICAL RULE: The post MUST directly address the signal/topic above. Do NOT write a generic post about the content pillar. The signal IS the story. NEVER contradict the signal.
+
+  === STRATEGY CONTEXT (for alignment, NOT the primary topic) ===
+  {{STRATEGY_CONTEXT}}
+
+  === AUTHOR VOICE ===
+  {{AUTHOR_VOICE}}
+
+  === CAMPAIGN CONTEXT ===
+  {{CAMPAIGN_CONTEXT}}
+
+  === PERFORMANCE CONTEXT ===
+  {{PERFORMANCE_CONTEXT}}
+
+  === USER FEEDBACK INTELLIGENCE ===
+  {{FEEDBACK_INTELLIGENCE}}
+
+  === REGENERATION INSTRUCTION (if revising) ===
+  {{REGENERATION_INSTRUCTION}}
+
+  === CURRENT CONTENT (if revising) ===
+  {{CURRENT_CONTENT}}
+
+  === PREVIOUS CRITIQUE ===
   {{PREVIOUS_FEEDBACK}}
 
-  Generate an Instagram post based on this signal feed entry, aligned with the strategy and written in the author's voice. Optimize for Instagram's algorithm and engagement patterns. Provide evidence for every key claim.
+  Generate an Instagram post that:
+  1. Is DIRECTLY about the signal/topic above — not a generic pillar take
+  2. Uses the author's authentic voice
+  3. Optimized for Instagram engagement — saves, shares, DMs
+  4. Has a strong visual hook for the caption
+  5. Includes relevant hashtags (3-5)
 
 evidence_requirements:
   - "Every claim must cite its source: strategy document, signal feed entry, or performance data"

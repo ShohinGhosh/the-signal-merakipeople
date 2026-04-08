@@ -1,8 +1,10 @@
 import { Post } from '../../../models/Post';
+import { SignalFeed } from '../../../models/SignalFeed';
 import { AgentRun, IAgentRunItem } from '../../../models/AgentRun';
 import { runAgentCritiqueLoop } from '../../ai/orchestrator';
 import { gatherEvidenceContext } from '../../ai/evidenceEngine';
 import { hasContentFields } from '../../ai/jsonExtractor';
+import { getIntelligenceContext } from '../../feedback/intelligenceService';
 
 /**
  * Content Drafter Agent Factory.
@@ -59,15 +61,33 @@ export async function execute(
 
     for (const post of authorPostsList) {
       try {
+        // Fetch the actual signal raw text if this post is linked to a signal
+        let signalFeedEntry = '';
+        if (post.signalFeedId) {
+          const signal = await SignalFeed.findById(post.signalFeedId).lean();
+          if (signal) {
+            signalFeedEntry = `ORIGINAL FOUNDER INSIGHT (THIS IS THE PRIMARY INPUT — the post MUST be about this):\n"${(signal as any).rawText}"\n\nTags: ${((signal as any).tags || []).join(', ')}`;
+          }
+        }
+
+        // Get feedback intelligence for self-learning
+        let feedbackIntel = '';
+        try {
+          const intel = await getIntelligenceContext(format, platform, post.contentPillar);
+          feedbackIntel = intel.promptAugmentation || '';
+        } catch { /* non-blocking */ }
+
         const result = await runAgentCritiqueLoop({
           generatorPrompt,
           critiquePrompt: 'post-critique',
           context: {
             ...evidenceContext,
+            SIGNAL_FEED_ENTRY: signalFeedEntry || `Topic brief: ${post.notes || 'No topic brief provided'}`,
             SIGNAL_TEXT: post.notes || '',
             PLATFORM: platform,
             FORMAT: format,
             CONTENT_PILLAR: post.contentPillar || '',
+            FEEDBACK_INTELLIGENCE: feedbackIntel,
           },
           operation: `agent-draft-${platform}-${format}`,
           user: author,

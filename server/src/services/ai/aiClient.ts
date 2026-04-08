@@ -29,7 +29,7 @@ export interface AICallParams {
 const GEMINI_MODEL_MAP: Record<string, string> = {
   'claude-sonnet-4-5-20250514': 'gemini-2.0-flash',
   'claude-sonnet-4-5': 'gemini-2.0-flash',
-  'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
+  'claude-sonnet-4-20250514': 'gemini-2.0-flash',
   'claude-haiku-3-5': 'gemini-2.0-flash',
 };
 

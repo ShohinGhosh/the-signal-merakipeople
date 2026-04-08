@@ -1,7 +1,7 @@
 name: "monday-brief"
 version: "1.0"
 description: "Generates the weekly Monday Brief with Signal Score analysis, top post breakdown, pipeline summary, pillar performance, and specific actionable recommendations."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 3000
 temperature: 0.5
 system_prompt: |

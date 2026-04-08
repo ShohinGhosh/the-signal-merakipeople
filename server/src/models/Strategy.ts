@@ -76,6 +76,12 @@ export interface IStrategy extends Document {
   clientRoster: Record<string, any>[];
   metricsTargets: IMetricsTargets;
   platformBenchmarks: IPlatformBenchmarks;
+  platformConfig: {
+    platform: string;
+    status: 'active' | 'planned' | 'inactive';
+    launchDate?: Date | null;
+    notes?: string;
+  }[];
   competitiveIntelligence: string;
   isCurrent: boolean;
   isComplete: boolean;
@@ -106,7 +112,7 @@ const StrategySchema = new Schema<IStrategy>(
         purpose: String,
         targetPercent: Number,
         examplePostTypes: [String],
-        owner: { type: String, enum: ['shohini', 'sanjoy', 'both'] },
+        owner: { type: String },
       },
     ],
     voiceShohini: { type: String, default: '' },
@@ -137,6 +143,21 @@ const StrategySchema = new Schema<IStrategy>(
       trainingRevenueTarget: Number,
     },
     platformBenchmarks: { type: Schema.Types.Mixed, default: {} },
+    platformConfig: {
+      type: [
+        {
+          platform: { type: String, required: true },
+          status: { type: String, enum: ['active', 'planned', 'inactive'], default: 'planned' },
+          launchDate: { type: Date, default: null },
+          notes: { type: String, default: '' },
+        },
+      ],
+      default: [
+        { platform: 'linkedin', status: 'active', launchDate: null, notes: '' },
+        { platform: 'instagram', status: 'planned', launchDate: null, notes: '' },
+        { platform: 'facebook', status: 'planned', launchDate: null, notes: '' },
+      ],
+    },
     competitiveIntelligence: { type: String, default: '' },
     isCurrent: { type: Boolean, default: true },
     isComplete: { type: Boolean, default: false },

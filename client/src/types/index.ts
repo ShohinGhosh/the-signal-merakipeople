@@ -91,6 +91,12 @@ export interface Strategy {
   clientRoster: Record<string, any>[];
   metricsTargets: MetricsTargets;
   platformBenchmarks?: PlatformBenchmarks;
+  platformConfig?: {
+    platform: string;
+    status: 'active' | 'planned' | 'inactive';
+    launchDate?: string | null;
+    notes?: string;
+  }[];
   competitiveIntelligence: string;
   isCurrent: boolean;
   isComplete: boolean;
@@ -192,7 +198,7 @@ export interface Post {
   signalFeedId: string | null;
   campaignId: string | null;
   author: 'shohini' | 'sanjoy';
-  platform: 'linkedin' | 'instagram' | 'both';
+  platform: 'linkedin' | 'instagram' | 'facebook' | 'both';
   format: string;
   contentPillar: string;
   draftContent: string;
@@ -206,6 +212,7 @@ export interface Post {
   imagePrompt: string;
   imageUrl: string;
   imageVariations: string[];
+  carouselPdfUrl: string;
   scheduledAt: string | null;
   publishedAt: string | null;
   approvedAt: string | null;
@@ -543,6 +550,50 @@ export interface MetaIntegration {
   igUsername?: string;
   connectedAt?: string;
 }
+
+// ============ Journal ============
+export interface JournalRecommendation {
+  contentPillar: string;
+  pillarWeight: string;
+  format: string;
+  calendarSlot: string | null;
+  owner: 'shohini' | 'sanjoy';
+  signalStrength: 'weak' | 'moderate' | 'strong';
+  draftHook: string;
+  icpResonance: string;
+  keyMessageMatch: string;
+  ninetyDayRelevance: string;
+}
+
+export interface JournalEntry {
+  _id: string;
+  author: 'shohini' | 'sanjoy';
+  rawText: string;
+  entryType: string | null;
+  status: 'pending_analysis' | 'analysed' | 'accepted' | 'edited' | 'discarded';
+  recommendation: JournalRecommendation | null;
+  editedRecommendation: JournalRecommendation | null;
+  founderDecision: 'accepted' | 'edited' | 'discarded' | null;
+  signalFeedEntryId: string | null;
+  aiCost: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    model: string;
+    durationMs: number;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const JOURNAL_ENTRY_TYPES = [
+  { key: 'sales_call_insight', label: 'Sales Call Insight', emoji: '💬' },
+  { key: 'market_observation', label: 'Market Observation', emoji: '🔍' },
+  { key: 'product_update', label: 'Product Update', emoji: '⚡' },
+  { key: 'customer_behaviour', label: 'Customer Behaviour', emoji: '🎯' },
+  { key: 'founder_reflection', label: 'Founder Reflection', emoji: '💡' },
+  { key: 'icp_language', label: 'ICP Language', emoji: '📣' },
+] as const;
 
 // ============ Signal Tags ============
 export const SIGNAL_TAGS = [

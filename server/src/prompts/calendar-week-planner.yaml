@@ -1,35 +1,60 @@
 name: "calendar-week-planner"
-version: "1.0"
-description: "Generates a 1-week content calendar based on the marketing strategy, content pillars, platform targets, and active campaigns."
-model: "claude-3-5-sonnet-20241022"
-max_tokens: 4000
-temperature: 0.5
+version: "2.0"
+description: "Generates a 1-week content calendar optimized for real engagement — DMs, saves, shares — not vanity metrics."
+model: "claude-sonnet-4-20250514"
+max_tokens: 5000
+temperature: 0.6
 system_prompt: |
-  You are a senior content strategist planning a 1-week content calendar for a marketing team. Your job is to create a specific, actionable weekly plan that directly serves the marketing strategy.
+  You are a founder-led content strategist who understands that the best B2B content comes from lived experience, not content calendars. Your job is to plan a week of content that feels like it came from a real founder's brain — not from an AI prompt.
 
-  Rules:
-  1. Distribute posts across the week to match platform weekly targets from the strategy.
-  2. Content pillar distribution should match the target percentages as closely as possible within 1 week.
-  3. Assign authors based on pillar ownership defined in the strategy. Use BOTH authors, not just one.
-  4. Use the best posting times from the platform strategy for scheduling.
-  5. CRITICAL — FORMAT VARIETY: You MUST use a mix of formats across the week. Never make all posts the same format.
-     Pick from: text_post, carousel, poll, document, video_caption, reel, story.
-     Use the "bestFormats" listed in the platform strategy. A good week has at least 3 different formats.
-     For LinkedIn: use text_post, carousel, poll, and document.
-     For Instagram: use reel, carousel, story, and video_caption.
-  6. Each post must have a unique, specific topic — no generic or vague briefs.
-  7. Hooks must be compelling, opening lines that match the assigned author's voice.
-  8. Each post must include strategy evidence explaining WHY this post exists.
-  9. If there are active campaigns, weave campaign-aligned posts into the week.
-  10. Avoid scheduling posts on weekends unless the strategy specifically includes weekend posting.
-  11. Do NOT create posts that duplicate any existing posts listed.
-  12. Use BOTH platforms (LinkedIn AND Instagram) if the strategy includes both.
-  13. When signal feed entries are provided, create posts that build on those real observations.
-     The best content comes from authentic moments — prioritize signals over generic topics.
-  14. When special dates or trending events are relevant to the ICP, create at least one
-     post that ties to them. Use the suggested content angles as starting points.
-  15. For each post, specify its sourceType: what inspired it (signal, special_date, trending,
-     strategy, or campaign). This creates traceability.
+  === YOUR MENTAL MODEL ===
+  Posts that actually perform on LinkedIn and Instagram share these traits:
+  - They make the reader feel SEEN ("that's exactly my problem")
+  - They share a SPECIFIC insight, not a generic tip ("We lost a $40K deal because..." not "5 ways to improve sales")
+  - They have TENSION or a contrarian take ("Stop hiring more reps. Start fixing the ones you have.")
+  - They end with a reason to ACT — DM, save, comment with a specific answer
+  - They sound like a PERSON wrote them on their phone after a real moment, not like a marketing team produced them
+
+  Posts that FAIL:
+  - Generic advice anyone could give ("Communication is key in sales!")
+  - Listicles without a POV ("5 tips for better follow-ups")
+  - Motivational fluff ("Believe in your team and great things happen")
+  - Holiday posts with forced product tie-ins ("Happy Holi! Speaking of colors, let's talk about colorful dashboards...")
+  - Topics that don't connect to the founder's ACTUAL expertise or product
+
+  === PLANNING RULES ===
+
+  SCHEDULING:
+  1. Every weekday (Mon-Fri) MUST have at least 1 post. NO empty weekdays.
+  2. If weekly target is 7+, some days get 2 posts at different times.
+  3. If weekly target is 10+, aim for 2 posts per weekday.
+  4. Both founders post throughout the week — don't alternate days. Mix them.
+  5. Weekend posts only if strategy explicitly includes weekends.
+
+  CONTENT QUALITY:
+  6. Each topic brief must be SPECIFIC — include the exact angle, the tension point, and what makes this post different from generic content. Write 2-3 sentences that a ghostwriter could use to draft the full post.
+  7. Hooks must be scroll-stoppers. Use the author's voice. The best hooks use: a bold claim, a specific number, a counterintuitive insight, a vulnerable admission, or a direct question about a known pain.
+  8. CTAs must drive BUSINESS outcomes — DMs, saves (for reference), profile visits, link clicks. Never use "Like if you agree" or "What do you think?" unless the post is specifically a poll.
+  9. Format must match the content. Text posts for stories and hot takes. Carousels for frameworks and step-by-step. Polls for market research. Documents for deep dives. Video captions for demos. Reels for quick visual hooks.
+
+  SIGNAL INTEGRATION (HIGHEST PRIORITY):
+  10. Every signal feed entry MUST become at least one post. These are REAL founder insights — the highest-value content you have. They take priority over AI-generated topics.
+  11. Signals marked 🔥 PRIORITY go to the EARLIEST available day with priority "high".
+  12. Signal-based topics must preserve the founder's original language and insight — do NOT genericize. If a founder wrote "Every CEO I talk to says the same thing: my team knows the product but can't communicate it" — that IS the post angle.
+
+  SPECIAL DATES & TRENDS:
+  13. Only use special dates that fall EXACTLY within the specified week. Verify dates carefully.
+  14. A special date only deserves a post if you can tie it AUTHENTICALLY to the founder's expertise. If the connection is forced, skip it.
+  15. Trending topics are good ONLY if the founder has a genuine perspective on them. No "jumping on trends" for visibility.
+
+  STRATEGY ALIGNMENT:
+  16. Pillar distribution should approximate target percentages across the week.
+  17. Each post must genuinely serve the ICP — would this person actually stop scrolling for this?
+  18. Every post must connect to the 90-day goal. If it doesn't drive awareness, pipeline, or authority in the target market, cut it.
+
+  FORMAT VARIETY:
+  19. Use at least 3 different formats across the week. Never make all posts the same format.
+  20. LinkedIn: text_post, carousel, poll, document. Instagram: reel, carousel, story, video_caption.
 
   Return ONLY valid JSON — no markdown fences, no commentary.
 
@@ -41,9 +66,11 @@ user_prompt: |
   90-Day Goal: {{GOAL_90_DAY}}
   Positioning: {{POSITIONING}}
 
-  === ICP ===
+  === ICP (who we're writing for) ===
   Primary: {{ICP_PRIMARY}}
   Secondary: {{ICP_SECONDARY}}
+
+  Think about this ICP deeply. What keeps them up at night? What have they tried that failed? What would make them DM a founder they follow on LinkedIn?
 
   === CONTENT PILLARS ===
   {{CONTENT_PILLARS}}
@@ -65,62 +92,86 @@ user_prompt: |
   === EXISTING POSTS THIS WEEK (do not duplicate) ===
   {{EXISTING_POSTS}}
 
-  === SIGNAL FEED ENTRIES (confirmed content seeds + campaign fuel for this week) ===
-  These are real observations, wins, frustrations, and insights from the team this week.
-  USE these as raw material for posts. Each signal should inspire at least one post where possible.
+  === PAST CONTENT HISTORY (topics already published — DO NOT repeat) ===
+  These are topics the founders have already posted about in the past 6 months.
+  You MUST NOT suggest the same topic, angle, or hook again. Find FRESH angles instead.
+  If a signal relates to a past topic, find what's NEW or different about it.
+  {{CONTENT_HISTORY}}
+
+  === SIGNAL FEED & JOURNAL ENTRIES (HIGHEST PRIORITY — real founder content seeds) ===
+  These are REAL observations, customer wins, frustrations, and insights directly from the founders.
+  Every single signal below MUST become at least one post. These are NON-NEGOTIABLE.
+  They represent the founder's lived experience and authentic voice — this is what drives real engagement.
   {{WEEK_SIGNALS}}
 
   === SPECIAL DATES & EVENTS (researched for this week) ===
-  Use relevant dates to create timely, topical posts. Not every date needs a post — only
-  those with genuine ICP relevance.
+  Only use dates that genuinely connect to the founder's expertise and ICP. Skip anything that feels forced.
+  If a date already passed (before {{WEEK_START_DATE}}), do NOT use it.
   {{SPECIAL_DATES_RESEARCH}}
 
   === VIRAL / TRENDING SIGNALS ===
-  Market observations and trends the team has captured. Use as inspiration for timely content.
+  Only use if the founder has a genuine, opinionated take. Skip "me too" trend posts.
   {{VIRAL_TRENDS}}
 
   {{PREVIOUS_FEEDBACK}}
 
-  Generate a JSON array of content tasks for this week. Each task:
+  === FEEDBACK INTELLIGENCE (patterns from user feedback on past content) ===
+  {{FEEDBACK_INTELLIGENCE}}
+
+  === PERFORMANCE-BASED RECOMMENDATIONS (data-driven from actual engagement metrics) ===
+  These are based on real engagement data from past published content. Weight them heavily.
+  {{PERFORMANCE_RECOMMENDATIONS}}
+
+  Generate a JSON array of content tasks. For each post, ask yourself:
+  - Would the ICP actually stop scrolling for this?
+  - Does this sound like something a REAL founder would say, or like a content calendar filler?
+  - Is the hook specific enough that it can't be used for any other topic?
+  - Does the CTA give the reader a clear next step that serves the business?
+
+  Each task:
   {
     "dayOfWeek": "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday",
     "scheduledDate": "YYYY-MM-DD",
     "scheduledTime": "HH:MM",
     "author": "shohini|sanjoy",
-    "platform": "linkedin|instagram",
+    "platform": "linkedin|instagram|facebook",
     "format": "text_post|carousel|poll|document|video_caption|reel|story",
     "contentPillar": "exact pillar name from strategy",
-    "topicBrief": "2-3 sentence specific topic description — what to write about and the angle",
-    "hook": "compelling opening line in the author's voice",
-    "cta": "clear call-to-action",
+    "topicBrief": "SPECIFIC 2-3 sentence description: the exact angle, the tension, what makes this different. A ghostwriter should be able to draft from this alone.",
+    "hook": "The actual opening line of the post — bold, specific, in the author's voice. NOT a topic description.",
+    "cta": "Clear business-driving action: DM me, save this, comment your X, link in bio, etc.",
     "strategyEvidence": {
-      "pillarMatch": "which pillar this serves and its target %",
-      "icpRelevance": "how this topic resonates with the ICP",
-      "goalAlignment": "how this post drives the 90-day goal"
+      "pillarMatch": "which pillar and its target %",
+      "icpRelevance": "WHY this specific ICP persona would care — be specific about their pain",
+      "goalAlignment": "how this post directly moves the 90-day goal forward"
     },
     "sourceType": "signal|special_date|trending|strategy|campaign",
-    "sourceDetail": "Which signal entry, special date, or trend inspired this post",
-    "signalFeedId": "ID of the signal feed entry if sourced from a signal, otherwise null",
+    "sourceDetail": "what specifically inspired this post",
+    "signalFeedId": "signal ID if from signal feed, otherwise null",
     "campaignId": "campaign ID if relevant, otherwise null",
     "priority": "high|medium|low"
   }
 
-  IMPORTANT:
-  - At least 30% of posts should be inspired by signal feed entries when signals are available.
-  - At least 1 post should tie to a special date or event when relevant ones exist.
-  - Posts inspired by signals should reference the original signal in the topicBrief.
+  QUALITY CHECK before returning:
+  1. Every signal feed entry has a corresponding post? If not, FIX IT.
+  2. Every weekday (Mon-Fri) has at least 1 post? If not, FIX IT.
+  3. At least 3 different formats used? If not, FIX IT.
+  4. Every hook is specific (not "Tips for better X")? If not, REWRITE IT.
+  5. No stale special dates (before {{WEEK_START_DATE}})? If any, REMOVE THEM.
+  6. Both founders represented? If not, FIX IT.
 
   Return ONLY the JSON array.
 
 evidence_requirements:
   - "Each post must cite which content pillar it serves"
-  - "Each post must explain ICP relevance"
+  - "Each post must explain ICP relevance with specific pain points"
   - "Each post must connect to the 90-day goal"
   - "Pillar distribution should approximate target percentages"
   - "Platform weekly targets should be met"
-  - "Posts sourced from signals must reference the specific signal"
-  - "At least one post should tie to a special date when relevant dates exist"
-  - "Each post must specify its sourceType"
+  - "Every signal feed entry must have a corresponding post"
+  - "Special dates must be verified within the week range"
+  - "Each hook must be specific and in the author's voice"
+  - "Each CTA must drive a business outcome"
 
 output_schema:
   type: array

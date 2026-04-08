@@ -424,6 +424,62 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     console.log('[Strategy Generate] Running agent+critique loop to synthesize strategy from all raw inputs...');
 
+    // ── Load content history & performance insights ──
+    let contentHistorySummary = '';
+    let performanceRecommendations = '';
+    try {
+      const { ContentHistory } = await import('../models/ContentHistory');
+      const historyEntries = await ContentHistory.find({})
+        .sort({ publishedDate: -1 })
+        .limit(200)
+        .select('author platform topic hook format contentPillar publishedDate performanceNotes');
+
+      if (historyEntries.length > 0) {
+        dataSources.contentHistoryPosts = historyEntries.length;
+        const byMonth: Record<string, string[]> = {};
+        for (const e of historyEntries) {
+          const month = e.publishedDate.toISOString().slice(0, 7);
+          if (!byMonth[month]) byMonth[month] = [];
+          const line = `- [${e.author}/${e.platform}] ${e.topic}${e.contentPillar ? ` [pillar: ${e.contentPillar}]` : ''}${e.performanceNotes ? ` (perf: ${e.performanceNotes})` : ''}`;
+          byMonth[month].push(line);
+        }
+        contentHistorySummary = `PAST CONTENT PUBLISHED (${historyEntries.length} posts):\n`;
+        for (const [month, lines] of Object.entries(byMonth).sort().reverse()) {
+          contentHistorySummary += `\n--- ${month} ---\n` + lines.join('\n') + '\n';
+        }
+      }
+
+      const { getPerformanceInsights, generateStrategyRecommendations } = await import('../services/feedback/performanceInsightsService');
+      const insights = await getPerformanceInsights();
+      const recs = generateStrategyRecommendations(insights);
+      if (recs.length > 0) {
+        dataSources.hasPerformanceData = true;
+        dataSources.performanceRecommendations = recs.length;
+        performanceRecommendations = 'DATA-DRIVEN RECOMMENDATIONS FROM PAST CONTENT:\n' +
+          recs.map(r => `- [${r.confidence}] ${r.recommendation} (${r.evidence})`).join('\n');
+      }
+    } catch (err) {
+      console.log('[Strategy Generate] Content history load skipped:', (err as any)?.message);
+    }
+
+    // Track what data sources were used
+    const dataSources = {
+      onboardingSections: 6,
+      contentHistoryPosts: 0,
+      hasPerformanceData: false,
+      performanceRecommendations: 0,
+    };
+
+    // Build platform config context
+    let platformConfigContext = 'No platform configuration set.';
+    if (strategy.platformConfig?.length > 0) {
+      platformConfigContext = (strategy as any).platformConfig.map((pc: any) => {
+        if (pc.status === 'active') return `- ${pc.platform}: ACTIVE — established presence, has posting history`;
+        if (pc.status === 'planned') return `- ${pc.platform}: PLANNED — not yet launched. Strategy for this platform should focus on launch approach, initial audience building, and brand introduction`;
+        return `- ${pc.platform}: INACTIVE — excluded from strategy`;
+      }).join('\n');
+    }
+
     // Build context with all raw inputs for the prompt templates
     const context: Record<string, string> = {
       SECTION1_BUSINESS_CONTEXT: rawInputs.section1_businessContext,
@@ -432,6 +488,9 @@ router.post('/generate', async (req: Request, res: Response) => {
       SECTION3A_PLATFORM_METRICS: rawInputs.section3a_platformMetrics,
       SECTION4_VOICE_POSITIONING: rawInputs.section4_voicePositioning,
       SECTION5_CAMPAIGNS: rawInputs.section5_campaigns,
+      CONTENT_HISTORY: contentHistorySummary || 'No past content history available.',
+      PERFORMANCE_RECOMMENDATIONS: performanceRecommendations || 'No performance data available yet.',
+      PLATFORM_CONFIG: platformConfigContext,
     };
 
     const result = await runAgentCritiqueLoop({
@@ -482,6 +541,7 @@ router.post('/generate', async (req: Request, res: Response) => {
       iterations: result.iterations,
       critiqueScore: result.critique?.score || null,
       critiqueFeedback: result.critique?.feedback || null,
+      dataSources,
     });
   } catch (err: any) {
     console.error('Strategy generate error:', err);

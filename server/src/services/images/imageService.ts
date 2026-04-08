@@ -1,4 +1,4 @@
-import { generateImage } from './falClient';
+import { generateImage, AspectRatio } from './falClient';
 import { uploadImageToAzure, isAzureConfigured } from './azureBlobClient';
 
 export interface ImageGenerationResult {
@@ -23,14 +23,16 @@ export interface ImageGenerationResult {
  * @param prompt - The image generation prompt
  * @param postId - Post ID (used for blob naming)
  * @param numVariations - Number of image variations to generate (default 1)
+ * @param aspectRatio - Aspect ratio for the image (default '1:1', use '16:9' for video thumbnails)
  */
 export async function generateAndStoreImage(
   prompt: string,
   postId: string,
-  numVariations = 1
+  numVariations = 1,
+  aspectRatio: AspectRatio = '1:1'
 ): Promise<ImageGenerationResult> {
   // Step 1: Generate via fal.ai (Nano Banana Pro)
-  const falResult = await generateImage(prompt, '1:1', '1K', numVariations);
+  const falResult = await generateImage(prompt, aspectRatio, '1K', numVariations);
 
   // Step 2: Upload to Azure Blob Storage if configured, otherwise return temp URLs
   if (isAzureConfigured()) {

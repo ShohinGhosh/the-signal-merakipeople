@@ -6,11 +6,30 @@ import { Campaign } from '../models/Campaign';
 import { SignalFeed } from '../models/SignalFeed';
 import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
 import { runContentAgents, runAgent } from '../services/automations/agentRunner';
+import { getIntelligenceContext } from '../services/feedback/intelligenceService';
 
 const router = Router();
 
+// Generation progress tracker (in-memory)
+let generationProgress: { active: boolean; step: string; startedAt: Date | null } = {
+  active: false, step: '', startedAt: null,
+};
+
+function setProgress(step: string) {
+  generationProgress = { active: true, step, startedAt: generationProgress.startedAt || new Date() };
+}
+
+function clearProgress() {
+  generationProgress = { active: false, step: '', startedAt: null };
+}
+
 // All calendar routes require authentication
 router.use(authMiddleware);
+
+// GET /api/calendar/generation-progress — poll for generation status
+router.get('/generation-progress', (req: Request, res: Response) => {
+  res.json(generationProgress);
+});
 
 /**
  * @openapi
@@ -519,9 +538,20 @@ router.put('/reschedule', async (req: Request, res: Response) => {
       return;
     }
 
+    // Preserve the post's current time when rescheduling to a new date
+    const existingPost = await Post.findById(postId);
+    if (!existingPost) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    const oldDate = existingPost.scheduledAt ? new Date(existingPost.scheduledAt) : new Date();
+    const newDateObj = new Date(newDate);
+    // Keep the original time, just change the date
+    newDateObj.setHours(oldDate.getHours(), oldDate.getMinutes(), 0, 0);
+
     const post = await Post.findByIdAndUpdate(
       postId,
-      { scheduledAt: newDate, status: 'scheduled' },
+      { scheduledAt: newDateObj },
       { new: true }
     );
 
@@ -608,29 +638,46 @@ router.post('/generate-week', async (req: Request, res: Response) => {
       return;
     }
 
-    // 2. Determine week start
+    // 2. Determine week start and platforms
     let weekStart: Date;
     if (req.body.weekStart) {
       weekStart = new Date(req.body.weekStart);
     } else {
       weekStart = getCurrentMonday();
     }
+
+    // Platforms filter — defaults to all platforms from strategy if not specified
+    const requestedPlatforms: string[] = req.body.platforms || [];
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
     const weekStartStr = weekStart.toISOString().slice(0, 10);
 
+    setProgress('Preparing strategy...');
     console.log(`[Calendar Generate] Generating week plan for ${weekStartStr}...`);
 
-    // 3. Delete old AI-generated draft/ready posts for this week (regenerate = replace)
-    //    Keep any posts that are already scheduled or published (user may have manually promoted them)
+    // 3. Delete old AI-generated posts for this week (regenerate = full replace)
+    //    Keep ONLY published posts (those were actually posted by the user)
     const deleteResult = await Post.deleteMany({
       scheduledAt: { $gte: weekStart, $lte: weekEnd },
-      status: { $in: ['draft', 'ready'] },
+      status: { $in: ['draft', 'ready', 'scheduled'] },
     });
     if (deleteResult.deletedCount > 0) {
-      console.log(`[Calendar Generate] Cleared ${deleteResult.deletedCount} old draft/ready posts for regeneration`);
+      console.log(`[Calendar Generate] Cleared ${deleteResult.deletedCount} old posts for regeneration (kept published only)`);
+    }
+
+    // 3b. Restore signals that were marked 'in_calendar' back to 'confirmed'
+    //     so they can be re-used in the new generation (especially Journal entries)
+    const restoredSignals = await SignalFeed.updateMany(
+      {
+        status: 'in_calendar',
+        createdAt: { $gte: new Date(weekStart.getTime() - 14 * 24 * 60 * 60 * 1000), $lte: weekEnd },
+      },
+      { status: 'confirmed' }
+    );
+    if (restoredSignals.modifiedCount > 0) {
+      console.log(`[Calendar Generate] Restored ${restoredSignals.modifiedCount} signals back to confirmed for regeneration`);
     }
 
     // 4. Get remaining posts (scheduled/published) to avoid duplication
@@ -660,17 +707,21 @@ router.post('/generate-week', async (req: Request, res: Response) => {
       ).join('\n')
       : 'No active campaigns this week.';
 
-    // 5. Fetch confirmed signal feed entries for this week (INPUT 1: Signal Feed)
+    // 5. Fetch confirmed signal feed entries — include this week + recent unused from past 2 weeks
+    //    This ensures Journal entries and other signals are always picked up, even if created earlier
+    const signalLookbackStart = new Date(weekStart.getTime() - 14 * 24 * 60 * 60 * 1000);
     const confirmedSignals = await SignalFeed.find({
       status: 'confirmed',
       routing: { $in: ['content_seed', 'campaign_fuel'] },
-      createdAt: { $gte: weekStart, $lte: weekEnd },
+      createdAt: { $gte: signalLookbackStart, $lte: weekEnd },
     }).lean();
 
     const signalsSummary = confirmedSignals.length > 0
-      ? confirmedSignals.map((s: any) =>
-        `[ID:${s._id}] [${s.author}] [${s.routing}] [tags: ${(s.tags || []).join(', ')}] ${s.rawText.substring(0, 300)}${s.urlReference ? ' | URL: ' + s.urlReference : ''}`
-      ).join('\n')
+      ? confirmedSignals.map((s: any) => {
+        const isPriority = (s.tags || []).includes('priority_signal');
+        const prefix = isPriority ? '🔥 PRIORITY — MUST CREATE A POST FOR THIS: ' : '';
+        return `${prefix}[ID:${s._id}] [${s.author}] [${s.routing}] [tags: ${(s.tags || []).join(', ')}] ${s.rawText.substring(0, 300)}${s.urlReference ? ' | URL: ' + s.urlReference : ''}`;
+      }).join('\n')
       : 'No confirmed signals this week.';
 
     // 5b. Fetch viral/trending signals (market_observation, inspired_by) from last 2 weeks
@@ -686,18 +737,55 @@ router.post('/generate-week', async (req: Request, res: Response) => {
       ).join('\n')
       : 'No viral/trending signals captured recently.';
 
+    setProgress('Loading signals...');
     console.log(`[Calendar Generate] Found ${confirmedSignals.length} confirmed signals, ${viralSignals.length} viral signals for week ${weekStartStr}`);
+    if (confirmedSignals.length > 0) {
+      console.log(`[Calendar Generate] Signals being sent to AI:\n${signalsSummary}`);
+    }
 
     // 5c. Build context first (needed for research call)
     const pillarsSummary = (strategy.contentPillars || []).map((p) =>
       `- ${p.name} (${p.targetPercent}% target, owner: ${p.owner}) — ${p.purpose}. Formats: ${p.examplePostTypes.join(', ')}`
     ).join('\n');
 
-    const platformSummary = (strategy.platformStrategy || []).map((p) =>
-      `- ${p.platform}: ${p.weeklyTarget} posts/week, purpose: ${p.primaryPurpose}. Best formats: ${p.bestFormats.join(', ')}. Best times: ${p.bestPostingTimes.join(', ')}`
-    ).join('\n');
+    // Filter platform strategy to only requested platforms (if specified)
+    const strategyPlatforms = strategy.platformStrategy || [];
+    const activePlatforms = requestedPlatforms.length > 0
+      ? strategyPlatforms.filter((p) => requestedPlatforms.includes(p.platform.toLowerCase()))
+      : strategyPlatforms;
+
+    // If a requested platform isn't in the strategy, add a default entry
+    const knownPlatformNames = activePlatforms.map((p) => p.platform.toLowerCase());
+    const extraPlatforms = requestedPlatforms
+      .filter((rp) => !knownPlatformNames.includes(rp))
+      .map((rp) => `- ${rp}: 3 posts/week, purpose: brand awareness & engagement. Best formats: text_post, carousel, video_caption. Best times: 9:00 AM, 12:00 PM`);
+
+    const platformSummary = [
+      ...activePlatforms.map((p) =>
+        `- ${p.platform}: ${p.weeklyTarget} posts/week, purpose: ${p.primaryPurpose}. Best formats: ${p.bestFormats.join(', ')}. Best times: ${p.bestPostingTimes.join(', ')}`
+      ),
+      ...extraPlatforms,
+    ].join('\n');
+
+    const platformSelectionNote = requestedPlatforms.length > 0
+      ? `\nIMPORTANT: The user has selected these platforms for this week: ${requestedPlatforms.join(', ')}. ONLY create posts for these platforms. Do NOT create posts for any other platform.`
+      : '';
+
+    // Build platform config context (new channel launch awareness)
+    let platformConfigNote = '';
+    if (strategy.platformConfig?.length > 0) {
+      const configLines = strategy.platformConfig.map((pc: any) => {
+        if (pc.status === 'active') return `- ${pc.platform}: ACTIVE (established presence)`;
+        if (pc.status === 'planned') return `- ${pc.platform}: PLANNED (not yet launched — if included, treat as NEW CHANNEL LAUNCH: introduce the brand, build initial audience, establish voice)`;
+        return `- ${pc.platform}: INACTIVE (do not create content)`;
+      });
+      platformConfigNote = '\n\nCHANNEL STATUS:\n' + configLines.join('\n');
+    }
+
+    console.log(`[Calendar Generate] Platforms: ${requestedPlatforms.length > 0 ? requestedPlatforms.join(', ') : 'all from strategy'}`);
 
     // 5d. Research special dates & trending topics for this week (INPUT 3 & 4)
+    setProgress('Researching dates...');
     let specialDatesResearch = 'No special dates research available.';
     try {
       const weekEndStr = weekEnd.toISOString().slice(0, 10);
@@ -715,47 +803,136 @@ router.post('/generate-week', async (req: Request, res: Response) => {
         },
         operation: 'calendar-week-research',
         user: (req as any).user?.name || 'unknown',
-        maxIterations: 1,
-        acceptThreshold: 6,
+        maxIterations: 2,
+        acceptThreshold: 7,
       });
-      specialDatesResearch = researchResult.content;
+      // Post-process: strip out any special dates that are outside the week range
+      // (AI sometimes hallucates dates despite instructions)
+      try {
+        const parsed = researchResult.parsed || JSON.parse(researchResult.content);
+        if (parsed.specialDates && Array.isArray(parsed.specialDates)) {
+          const weekStartTime = weekStart.getTime();
+          const weekEndTime = weekEnd.getTime();
+          const before = parsed.specialDates.length;
+          parsed.specialDates = parsed.specialDates.filter((d: any) => {
+            const dateTime = new Date(d.date).getTime();
+            return dateTime >= weekStartTime && dateTime <= weekEndTime;
+          });
+          if (parsed.specialDates.length < before) {
+            console.log(`[Calendar Generate] Stripped ${before - parsed.specialDates.length} out-of-range special dates`);
+          }
+        }
+        specialDatesResearch = JSON.stringify(parsed, null, 2);
+      } catch {
+        specialDatesResearch = researchResult.content;
+      }
       console.log(`[Calendar Generate] Special dates research completed (score: ${researchResult.critique?.score || 'N/A'})`);
     } catch (researchErr) {
       console.error('[Calendar Generate] Special dates research failed (non-blocking):', researchErr);
     }
 
-    // 6. Build full context for the AI prompt (all 4 inputs)
+    // 5e. Gather past content history (avoid topic repetition)
+    let contentHistorySummary = '';
+    try {
+      const { ContentHistory } = await import('../models/ContentHistory');
+      const pastEntries = await ContentHistory.find({})
+        .sort({ publishedDate: -1 })
+        .limit(200)
+        .select('author platform topic hook contentPillar publishedDate');
+
+      if (pastEntries.length > 0) {
+        const byMonth: Record<string, string[]> = {};
+        for (const e of pastEntries) {
+          const month = e.publishedDate.toISOString().slice(0, 7);
+          if (!byMonth[month]) byMonth[month] = [];
+          byMonth[month].push(`- [${e.author}] ${e.topic}${e.hook ? ` ("${e.hook.slice(0, 60)}")` : ''}${e.contentPillar ? ` [${e.contentPillar}]` : ''}`);
+        }
+        contentHistorySummary = 'PAST CONTENT PUBLISHED — DO NOT REPEAT THESE TOPICS:\n';
+        for (const [month, lines] of Object.entries(byMonth).sort().reverse()) {
+          contentHistorySummary += `\n--- ${month} ---\n${lines.join('\n')}\n`;
+        }
+        console.log(`[Calendar Generate] Loaded ${pastEntries.length} past content entries for de-duplication`);
+      }
+    } catch (err) {
+      console.error('[Calendar Generate] Content history load failed (non-blocking):', err);
+    }
+
+    // 5f. Gather feedback intelligence (self-learning from user feedback)
+    let feedbackIntelligence = '';
+    try {
+      const intelligence = await getIntelligenceContext();
+      feedbackIntelligence = intelligence.promptAugmentation || '';
+      if (feedbackIntelligence) {
+        console.log(`[Calendar Generate] Injecting feedback intelligence (${intelligence.stats.totalFeedback} feedback points, ${intelligence.stats.approvalRate}% approval rate)`);
+      }
+    } catch (err) {
+      console.error('[Calendar Generate] Feedback intelligence failed (non-blocking):', err);
+    }
+
+    // 5g. Gather performance-based strategy recommendations
+    let performanceRecommendations = '';
+    try {
+      const { getPerformanceRecommendationsText } = await import('../services/feedback/performanceInsightsService');
+      performanceRecommendations = await getPerformanceRecommendationsText();
+      if (performanceRecommendations) {
+        console.log(`[Calendar Generate] Injecting performance recommendations`);
+      }
+    } catch (err) {
+      console.error('[Calendar Generate] Performance recommendations failed (non-blocking):', err);
+    }
+
+    // 6. Build full context for the AI prompt (all 4 inputs + feedback intelligence)
+    const weekEndStr2 = weekEnd.toISOString().slice(0, 10);
     const context: Record<string, string> = {
       WEEK_START_DATE: weekStartStr,
+      WEEK_END_DATE: weekEndStr2,
       NORTH_STAR: strategy.northStar || 'Not set',
       GOAL_90_DAY: strategy.goal90Day || 'Not set',
       POSITIONING: strategy.positioningStatement || 'Not set',
       ICP_PRIMARY: strategy.icpPrimary ? JSON.stringify(strategy.icpPrimary) : 'Not set',
       ICP_SECONDARY: strategy.icpSecondary ? JSON.stringify(strategy.icpSecondary) : 'Not set',
       CONTENT_PILLARS: pillarsSummary || 'No pillars defined',
-      PLATFORM_STRATEGY: platformSummary || 'No platform strategy defined',
+      PLATFORM_STRATEGY: (platformSummary || 'No platform strategy defined') + platformSelectionNote + platformConfigNote,
       VOICE_SHOHINI: strategy.voiceShohini || 'Not defined',
       VOICE_SANJOY: strategy.voiceSanjoy || 'Not defined',
       SHARED_TONE: strategy.sharedTone || 'Not defined',
       KEY_MESSAGES: (strategy.keyMessages || []).join('\n') || 'None',
       ACTIVE_CAMPAIGNS: campaignsSummary,
       EXISTING_POSTS: existingPostsSummary,
-      // NEW: 4-input additions
+      // 4-input additions
       WEEK_SIGNALS: signalsSummary,
       VIRAL_TRENDS: viralSummary,
       SPECIAL_DATES_RESEARCH: specialDatesResearch,
+      // Self-learning feedback intelligence
+      FEEDBACK_INTELLIGENCE: feedbackIntelligence,
+      // Past content history for de-duplication
+      CONTENT_HISTORY: contentHistorySummary,
+      // Performance-based strategy recommendations
+      PERFORMANCE_RECOMMENDATIONS: performanceRecommendations,
     };
 
     // 6. Run AI generation with critique loop
+    setProgress('Planning content...');
+
+    // Progress sub-steps timer (AI call takes 30-60s, cycle through thinking phases)
+    const thinkingSteps = ['Planning content...', 'Matching pillars...', 'Writing hooks...', 'Critiquing plan...', 'Refining topics...', 'Finalizing plan...'];
+    let stepIdx = 0;
+    const thinkingTimer = setInterval(() => {
+      stepIdx = (stepIdx + 1) % thinkingSteps.length;
+      setProgress(thinkingSteps[stepIdx]);
+    }, 8000);
     const result = await runAgentCritiqueLoop({
       generatorPrompt: 'calendar-week-planner',
       critiquePrompt: 'calendar-week-critique',
       context,
       operation: 'calendar-week-generation',
       user: req.user?.name || 'unknown',
-      maxIterations: 2,
+      maxIterations: 3,
       acceptThreshold: 7,
     });
+
+    clearInterval(thinkingTimer);
+    setProgress('Processing results...');
 
     // 7. Parse the generated plan
     let plan: any[] = [];
@@ -778,7 +955,38 @@ router.post('/generate-week', async (req: Request, res: Response) => {
       return;
     }
 
+    // 7b. Post-process: remove posts with out-of-range dates and clean up stale special_date posts
+    const weekStartTime = weekStart.getTime();
+    const weekEndTime = weekEnd.getTime();
+    const beforeFilter = plan.length;
+    plan = plan.filter((task: any) => {
+      if (!task.scheduledDate) return true;
+      const taskDate = new Date(task.scheduledDate).getTime();
+      // Remove posts scheduled outside the week
+      if (taskDate < weekStartTime || taskDate > weekEndTime) {
+        console.log(`[Calendar Generate] Stripped out-of-range post: ${task.scheduledDate} - ${task.topicBrief?.substring(0, 60)}`);
+        return false;
+      }
+      // Remove special_date posts referencing stale/hallucinated holidays
+      // Check ALL text fields — AI sometimes puts the holiday name in brief instead of sourceDetail
+      if (task.sourceType === 'special_date') {
+        const allText = [task.sourceDetail, task.topicBrief, task.hook, task.cta].filter(Boolean).join(' ').toLowerCase();
+        const staleHolidays = ['holi', 'diwali', 'eid', 'christmas', 'new year', 'easter', 'pongal', 'navratri', 'durga puja', 'ganesh'];
+        for (const holiday of staleHolidays) {
+          if (allText.includes(holiday)) {
+            console.log(`[Calendar Generate] Stripped hallucinated holiday post: "${holiday}" found in: ${task.topicBrief?.substring(0, 80)}`);
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+    if (plan.length < beforeFilter) {
+      console.log(`[Calendar Generate] Post-processing removed ${beforeFilter - plan.length} invalid posts, ${plan.length} remaining`);
+    }
+
     // 8. Create Post documents from the plan
+    setProgress('Saving posts...');
     const createdPosts = [];
     for (const task of plan) {
       try {
@@ -804,15 +1012,20 @@ router.post('/generate-week', async (req: Request, res: Response) => {
           ? `[Source: ${task.sourceType}${task.sourceDetail ? ' — ' + task.sourceDetail : ''}]\n`
           : '';
 
+        // Normalize author name (AI sometimes misspells 'sanjoy' as 'sanjay')
+        let normalizedAuthor = (task.author || 'shohini').toLowerCase().trim();
+        if (normalizedAuthor === 'sanjay' || normalizedAuthor === 'sanjoi') normalizedAuthor = 'sanjoy';
+        if (!['shohini', 'sanjoy'].includes(normalizedAuthor)) normalizedAuthor = 'shohini';
+
         const post = await Post.create({
-          author: task.author || 'shohini',
+          author: normalizedAuthor as 'shohini' | 'sanjoy',
           platform: task.platform || 'linkedin',
           format: task.format || 'text_post',
           contentPillar: task.contentPillar || '',
           scheduledAt,
           status: 'draft',
           notes: sourcePrefix + (task.topicBrief || ''),
-          linkedinHook: task.platform === 'linkedin' || task.platform === 'both' ? (task.hook || '') : '',
+          linkedinHook: task.platform === 'linkedin' || task.platform === 'facebook' || task.platform === 'both' ? (task.hook || '') : '',
           instagramHook: task.platform === 'instagram' || task.platform === 'both' ? (task.hook || '') : '',
           cta: task.cta || '',
           draftContent: '',
@@ -882,7 +1095,9 @@ router.post('/generate-week', async (req: Request, res: Response) => {
       },
       contentAgentsTriggered: true,
     });
+    clearProgress();
   } catch (err: any) {
+    clearProgress();
     console.error('Calendar generate-week error:', err);
     const errMsg = err?.message || '';
     if (errMsg.includes('API_KEY') || errMsg.includes('No AI provider')) {
@@ -1067,6 +1282,35 @@ router.put('/task/:postId/status', async (req: Request, res: Response) => {
       return;
     }
 
+    // Auto-log to ContentHistory when marked as published
+    if (status === 'published') {
+      try {
+        const { ContentHistory } = await import('../models/ContentHistory');
+        // Upsert — avoid duplicates if toggled back and forth
+        await ContentHistory.findOneAndUpdate(
+          { postId: post._id, source: 'system' },
+          {
+            postId: post._id,
+            author: post.author,
+            platform: post.platform,
+            topic: (post as any).linkedinHook
+              ? `${post.contentPillar}: ${(post as any).linkedinHook}`
+              : (post.draftContent || post.contentPillar || 'Untitled').substring(0, 200),
+            hook: (post as any).linkedinHook || (post as any).instagramHook || '',
+            format: post.format || 'text_post',
+            contentPillar: post.contentPillar || '',
+            publishedDate: new Date(),
+            performanceNotes: '',
+            source: 'system',
+          },
+          { upsert: true, new: true }
+        );
+        console.log(`[Auto-log] Published post ${postId} added to content history`);
+      } catch (err) {
+        console.error('[Auto-log] Failed to log published post (non-blocking):', err);
+      }
+    }
+
     res.json({
       message: `Task status updated to ${status}`,
       post,
@@ -1118,30 +1362,12 @@ router.post('/approve-week', async (req: Request, res: Response) => {
 
     console.log(`[Calendar Approve] Approved ${postIds.length} posts for week ${weekStartStr}`);
 
-    // Fire-and-forget: content drafting agents for posts without draftContent
-    const postsNeedingContent = draftPosts
-      .filter((p) => !p.draftContent || p.draftContent.trim() === '')
-      .map((p) => String(p._id));
-
-    if (postsNeedingContent.length > 0) {
-      runContentAgents(postsNeedingContent, req.user?.name || 'calendar-approve').then((runIds) => {
-        console.log(`[Calendar Approve] Triggered ${runIds.length} content agents for ${postsNeedingContent.length} posts`);
-      }).catch((err) => {
-        console.error('[Calendar Approve] Content agents error:', err.message);
-      });
-    }
-
-    // Fire-and-forget: image generation agent
-    runAgent('generate-images', req.user?.name || 'calendar-approve').then((result) => {
-      if ('runId' in result) {
-        console.log(`[Calendar Approve] Triggered image generation agent: ${result.runId}`);
-      }
-    }).catch((err) => {
-      console.error('[Calendar Approve] Image agent error:', err.message);
-    });
+    // Content is now generated per-post (via POST /api/posts/:id/generate-content)
+    // This keeps approve fast and lets users generate content one post at a time.
+    // Image generation also happens per-post after content is generated.
 
     res.json({
-      message: `Approved ${postIds.length} posts for the week`,
+      message: `Approved ${postIds.length} posts for the week. Generate content for each post individually.`,
       postsApproved: postIds.length,
       weekStart: weekStart.toISOString().slice(0, 10),
     });

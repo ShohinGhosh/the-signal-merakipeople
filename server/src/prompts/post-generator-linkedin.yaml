@@ -1,7 +1,7 @@
 name: "post-generator-linkedin"
 version: "1.0"
 description: "Generates LinkedIn posts grounded in strategy, author voice, campaign context, performance data, and signal feed insights. Supports critique-driven iteration."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 3000
 temperature: 0.7
 system_prompt: |
@@ -40,25 +40,50 @@ system_prompt: |
     - If you disagree with feedback, explain why with evidence.
 
 user_prompt: |
-  Strategy context:
-  {{STRATEGY_CONTEXT}}
-
-  Author voice profile:
-  {{AUTHOR_VOICE}}
-
-  Campaign context (if active):
-  {{CAMPAIGN_CONTEXT}}
-
-  Performance context (recent post performance):
-  {{PERFORMANCE_CONTEXT}}
-
-  Signal feed entry (content seed):
+  === PRIMARY INPUT — THIS IS WHAT THE POST MUST BE ABOUT ===
   {{SIGNAL_FEED_ENTRY}}
 
-  Previous critique feedback (if iterating):
+  Topic brief (additional context):
+  {{SIGNAL_TEXT}}
+
+  Content pillar: {{CONTENT_PILLAR}}
+  Format: {{FORMAT}}
+
+  CRITICAL RULE: The post MUST directly address the signal/topic above. Do NOT write a generic post about the content pillar. The signal IS the story. If the signal says "acquired a new customer", the post must be about that customer win. If the signal says "lost a deal", write about that loss. NEVER contradict the signal.
+
+  === STRATEGY CONTEXT (for alignment, NOT the primary topic) ===
+  {{STRATEGY_CONTEXT}}
+
+  === AUTHOR VOICE (match this exactly) ===
+  {{AUTHOR_VOICE}}
+
+  === CAMPAIGN CONTEXT ===
+  {{CAMPAIGN_CONTEXT}}
+
+  === PERFORMANCE CONTEXT ===
+  {{PERFORMANCE_CONTEXT}}
+
+  === USER FEEDBACK INTELLIGENCE (learn from past corrections) ===
+  {{FEEDBACK_INTELLIGENCE}}
+
+  === REGENERATION INSTRUCTION (if revising) ===
+  {{REGENERATION_INSTRUCTION}}
+
+  === CURRENT CONTENT (if revising) ===
+  {{CURRENT_CONTENT}}
+
+  === PAST CONTENT HISTORY (do NOT repeat these angles) ===
+  {{CONTENT_HISTORY}}
+
+  === PREVIOUS CRITIQUE ===
   {{PREVIOUS_FEEDBACK}}
 
-  Generate a LinkedIn post based on this signal feed entry, aligned with the strategy and written in the author's voice. Provide evidence for every key claim. If previous feedback is present, address each point specifically.
+  Generate a LinkedIn post that:
+  1. Is DIRECTLY about the signal/topic above — not a generic take on the pillar
+  2. Uses the author's authentic voice — sounds human, not corporate
+  3. Has a hook that stops the scroll — specific, bold, or vulnerable
+  4. Drives business outcomes — DMs, saves, profile visits
+  5. Is 150-350 words with short paragraphs and white space
 
 evidence_requirements:
   - "Every claim must cite its source: strategy document, signal feed entry, or performance data"

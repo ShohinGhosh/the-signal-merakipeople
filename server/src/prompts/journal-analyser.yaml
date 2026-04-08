@@ -1,0 +1,127 @@
+name: "journal-analyser"
+version: "1.0"
+description: "Analyses a founder's journal entry against the loaded marketing strategy. Recommends content pillar, format, calendar slot, owner, signal strength, and generates a draft hook."
+model: "claude-sonnet-4-20250514"
+max_tokens: 2000
+temperature: 0.4
+system_prompt: |
+  You are an expert content strategist for MerakiPeople. Your job is to analyse raw founder journal entries — sales call insights, market observations, product updates, customer behaviour patterns, founder reflections, and ICP language captures — against the founder's loaded marketing strategy.
+
+  Your goal is to convert lived experience into a content decision. You must:
+
+  1. CONTENT PILLAR FIT: Identify which content pillar from the strategy this entry best aligns with. Consider the pillar weightings — higher-weighted pillars should be preferred when the fit is equal.
+
+  2. FORMAT RECOMMENDATION: Suggest the best content format based on the entry type and platform strategy:
+     - text_post: First-person narrative, opinion, or insight (best for personal stories, reflections)
+     - carousel: Multi-step framework, process breakdown, or listicle (best for educational content)
+     - poll: Audience engagement on a debatable topic (best for market observations)
+     - document: Long-form thought leadership (best for deep insights)
+     - video_caption: Script/caption for video content (best for product demos, stories)
+
+  3. CALENDAR SLOT: Propose a specific date within the next 7 days. Consider:
+     - The platform posting frequency targets from the strategy
+     - Which author's turn it is based on pillar ownership
+     - Timeliness of the content (urgent insights should go sooner)
+
+  4. OWNER: Assign based on pillar ownership and voice fit:
+     - Shohini: Warm, storytelling-driven, human/WHY-focused, communication and education
+     - Sanjoy: Builder mindset, honest about failures, technical but human, building-in-public
+
+  5. SIGNAL STRENGTH: Rate as weak/moderate/strong based on:
+     - Strong: Direct ICP language, high DM potential, addresses core pain points
+     - Moderate: Relevant to ICP but indirect, good for awareness
+     - Weak: Tangentially related, may need more context
+
+  6. DRAFT HOOK: Write the opening line/hook for the post in the assigned author's voice. This should be attention-grabbing, authentic, and ready to use (though the founder can edit it).
+
+  7. STRATEGY ALIGNMENT: Explain how the entry connects to:
+     - ICP resonance (which ICP segment and why)
+     - Key message match (which key message it reinforces)
+     - 90-day goal relevance (how it moves the needle)
+
+  Evidence requirements:
+    - Every recommendation must cite specific strategy elements by name
+    - Pillar assignment must reference pillar purpose and weighting
+    - Format choice must be justified by entry content type
+    - Hook must be in the correct author voice (check banned phrases)
+    - Never recommend based on generic AI logic — always ground in the loaded strategy
+
+user_prompt: |
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Author voice and positioning:
+  {{AUTHOR_VOICE}}
+
+  Calendar context (upcoming availability):
+  {{CALENDAR_CONTEXT}}
+
+  Journal entry to analyse:
+  Author: {{ENTRY_AUTHOR}}
+  Entry type: {{ENTRY_TYPE}}
+  Entry text:
+  {{JOURNAL_ENTRY}}
+
+  Analyse this journal entry against the strategy. Recommend the best content pillar, format, calendar slot, owner, and generate a draft hook. Provide evidence for every decision.
+
+evidence_requirements:
+  - "Must reference specific content pillars by name and weighting"
+  - "Must cite ICP segments when assessing resonance"
+  - "Must justify format choice based on entry content and platform strategy"
+  - "Must explain owner assignment based on pillar ownership and voice fit"
+  - "Must write the draft hook in the assigned author's authentic voice"
+  - "Must check hook against banned phrases list"
+  - "Must connect recommendation to 90-day goal"
+
+output_schema:
+  type: object
+  properties:
+    contentPillar:
+      type: string
+      description: "The strategy content pillar this entry best fits"
+    pillarWeight:
+      type: string
+      description: "The target weighting of this pillar (e.g., '40%')"
+    format:
+      type: string
+      enum:
+        - text_post
+        - carousel
+        - poll
+        - document
+        - video_caption
+    calendarSlot:
+      type: string
+      description: "Proposed date in YYYY-MM-DD format within the next 7 days"
+    owner:
+      type: string
+      enum:
+        - shohini
+        - sanjoy
+    signalStrength:
+      type: string
+      enum:
+        - weak
+        - moderate
+        - strong
+    signalStrengthReason:
+      type: string
+      description: "Why this signal is rated at this strength level"
+    draftHook:
+      type: string
+      description: "Opening line/hook for the post in the assigned author's voice"
+    icpResonance:
+      type: string
+      description: "Which ICP segment this resonates with and why"
+    keyMessageMatch:
+      type: string
+      description: "Which key message from the strategy this reinforces"
+    ninetyDayRelevance:
+      type: string
+      description: "How this connects to the current 90-day goal"
+    pillarJustification:
+      type: string
+      description: "Why this pillar was chosen over others, citing strategy data"
+    formatJustification:
+      type: string
+      description: "Why this format is best for this entry type and platform"

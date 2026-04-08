@@ -1,7 +1,7 @@
 name: "strategy-generator"
 version: "1.1"
 description: "Synthesizes all 6 onboarding raw inputs (including Section 3A: Platform Metrics) into a complete, coherent marketing strategy document."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 4000
 temperature: 0.4
 system_prompt: |
@@ -14,6 +14,13 @@ system_prompt: |
   3A. Platform Metrics Snapshot — per-platform baseline metrics (followers, impressions, formats, pipeline attribution) and growth targets
   4. Voice & Positioning — communication style, tone, banned phrases
   5. Campaigns — upcoming launches, events, priorities
+
+  You will ALSO receive past content history (topics already published) and performance data (engagement metrics).
+  Use these to make the strategy data-informed:
+  - Pillar weightings should reflect what actually works, not just what sounds good.
+  - If a format consistently outperforms, prioritize it in platform strategy.
+  - If a pillar is underserved in past content, consider whether to increase or decrease its weight.
+  - Avoid recommending strategies that repeat what hasn't worked.
 
   Your task is to synthesize ALL of this into a unified strategy. Key principles:
   - Extract ONLY facts stated by the founder. Never fabricate details.
@@ -47,6 +54,24 @@ user_prompt: |
 
   === SECTION 5: Campaigns ===
   {{SECTION5_CAMPAIGNS}}
+
+  === PLATFORM STATUS (which platforms are active vs planned) ===
+  Use this to understand which platforms have an established presence and which are new/planned.
+  For ACTIVE platforms: build on existing momentum and optimize based on performance data.
+  For PLANNED platforms: design a launch strategy — focus on brand introduction, initial audience building, and establishing voice. These don't have history yet.
+  For INACTIVE platforms: exclude from platform strategy entirely.
+  {{PLATFORM_CONFIG}}
+
+  === PAST CONTENT HISTORY (what has already been published) ===
+  Use this to understand what topics, pillars, and formats the founders have actually been posting about.
+  Factor this into your pillar recommendations — if a pillar is underserved in past content, note it.
+  If certain topics are overdone, steer the strategy away from them.
+  {{CONTENT_HISTORY}}
+
+  === PERFORMANCE DATA & RECOMMENDATIONS ===
+  Use this real engagement data to inform pillar weightings, format preferences, and platform strategy.
+  If certain formats or pillars consistently outperform, weight the strategy accordingly.
+  {{PERFORMANCE_RECOMMENDATIONS}}
 
   Synthesize these into a complete marketing strategy with this exact JSON structure:
   {
@@ -127,6 +152,8 @@ evidence_requirements:
   - "Voice profiles must reflect the actual communication style described"
   - "Metrics targets must match what the founder stated, not aspirational guesses"
   - "Platform benchmarks must reflect declared metrics from Section 3A only — do not estimate or infer"
+  - "Pillar weightings and format recommendations should be informed by past content performance data when available"
+  - "Strategy should acknowledge what has already been published and avoid recommending overdone topics"
 
 output_schema:
   type: object

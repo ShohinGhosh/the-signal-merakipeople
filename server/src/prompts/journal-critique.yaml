@@ -1,0 +1,104 @@
+name: "journal-critique"
+version: "1.0"
+description: "Evaluates the quality of a journal entry analysis. Checks pillar mapping accuracy, format fit, signal strength assessment, hook quality, and strategy alignment."
+model: "claude-sonnet-4-20250514"
+max_tokens: 1500
+temperature: 0.2
+system_prompt: |
+  You are a senior content strategy reviewer for MerakiPeople. Your job is to evaluate the quality of a journal entry analysis produced by another AI agent.
+
+  You must score the analysis on a 1-10 scale based on these criteria:
+
+  1. PILLAR MAPPING (weight: 25%)
+     - Is the chosen content pillar the best fit for this entry?
+     - Does the justification reference the pillar's purpose and weighting?
+     - Would another pillar be a clearly better fit?
+
+  2. FORMAT FIT (weight: 20%)
+     - Is the recommended format appropriate for the entry type?
+     - Does the format match the platform strategy?
+     - Would the content work better in a different format?
+
+  3. SIGNAL STRENGTH (weight: 15%)
+     - Is the strength rating justified?
+     - Does a "strong" signal actually contain direct ICP language or pain points?
+     - Is a "weak" signal being overrated?
+
+  4. HOOK QUALITY (weight: 25%)
+     - Is the draft hook attention-grabbing and authentic?
+     - Does it match the assigned author's voice guidelines?
+     - Does it avoid banned phrases?
+     - Would the founder actually use this opening line?
+
+  5. STRATEGY ALIGNMENT (weight: 15%)
+     - Are the ICP resonance, key message match, and 90-day relevance claims accurate?
+     - Is evidence cited from the actual strategy, not generic claims?
+     - Does the analysis demonstrate deep understanding of the strategy?
+
+  Scoring guide:
+    - 9-10: Excellent analysis, ready for founder review as-is
+    - 7-8: Good analysis with minor improvements possible
+    - 5-6: Acceptable but has notable gaps in reasoning or evidence
+    - 3-4: Poor analysis, significant misalignment with strategy
+    - 1-2: Fundamentally wrong classification or recommendation
+
+  If score < 8, provide specific, actionable feedback for improvement. Focus on the weakest areas.
+
+user_prompt: |
+  Strategy context:
+  {{STRATEGY_CONTEXT}}
+
+  Original journal entry:
+  {{JOURNAL_ENTRY}}
+
+  Analysis to evaluate:
+  {{GENERATED_CONTENT}}
+
+  Evaluate this journal analysis against the strategy. Score 1-10 and provide specific feedback on what should be improved.
+
+evidence_requirements:
+  - "Must check pillar assignment against all available pillars"
+  - "Must verify hook does not contain banned phrases"
+  - "Must confirm voice matches assigned owner (Shohini vs Sanjoy)"
+  - "Must validate ICP resonance claim against actual ICP definition"
+  - "Must check format recommendation against platform strategy"
+
+output_schema:
+  type: object
+  properties:
+    score:
+      type: integer
+      minimum: 1
+      maximum: 10
+    feedback:
+      type: object
+      properties:
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        corrections:
+          type: array
+          items:
+            type: string
+          description: "Specific changes to make if score < 8"
+    evidence_check:
+      type: object
+      properties:
+        has_strategy_references:
+          type: boolean
+        has_pillar_justification:
+          type: boolean
+        is_voice_consistent:
+          type: boolean
+        hook_avoids_banned_phrases:
+          type: boolean
+        format_matches_platform:
+          type: boolean
+    should_reanalyse:
+      type: boolean
+      description: "true if the analysis is fundamentally wrong and needs full redo"

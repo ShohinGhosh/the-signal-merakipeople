@@ -6,6 +6,25 @@ import { runAgentCritiqueLoop } from '../services/ai/orchestrator';
 import { gatherEvidenceContext } from '../services/ai/evidenceEngine';
 import { hasContentFields } from '../services/ai/jsonExtractor';
 import { generateAndStoreImage, isImageGenerationAvailable } from '../services/images/imageService';
+import { generateCarouselPdf } from '../services/images/carouselPdfService';
+import { getIntelligenceContext } from '../services/feedback/intelligenceService';
+import { ContentHistory } from '../models/ContentHistory';
+
+// Helper: load past content topics to avoid repetition
+async function getContentHistorySummary(): Promise<string> {
+  try {
+    const entries = await ContentHistory.find({})
+      .sort({ publishedDate: -1 })
+      .limit(100)
+      .select('topic contentPillar');
+    if (entries.length === 0) return '';
+    const topics = entries.map(e => `- ${e.topic}${e.contentPillar ? ` [${e.contentPillar}]` : ''}`);
+    return 'PAST TOPICS ALREADY PUBLISHED (avoid repeating):\n' + topics.join('\n');
+  } catch { return ''; }
+}
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 const router = Router();
 
@@ -284,12 +303,22 @@ router.post('/:id/regenerate', async (req: Request, res: Response) => {
     // Gather evidence context
     const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
 
+    // Gather intelligence from past feedback
+    const intelligence = await getIntelligenceContext(
+      post.format,
+      post.platform,
+      post.contentPillar
+    );
+
     // Choose prompt based on platform
     const generatorPrompt = post.platform === 'instagram'
       ? 'post-generator-instagram'
       : 'post-generator-linkedin';
 
-    // Run AI agent-critique loop with regeneration instruction
+    // Load past content history for de-duplication
+    const contentHistory = await getContentHistorySummary();
+
+    // Run AI agent-critique loop with regeneration instruction + feedback intelligence
     const result = await runAgentCritiqueLoop({
       generatorPrompt,
       critiquePrompt: 'post-critique',
@@ -301,6 +330,8 @@ router.post('/:id/regenerate', async (req: Request, res: Response) => {
         CONTENT_PILLAR: post.contentPillar || '',
         REGENERATION_INSTRUCTION: instruction,
         CURRENT_CONTENT: post.draftContent || '',
+        FEEDBACK_INTELLIGENCE: intelligence.promptAugmentation || '',
+        CONTENT_HISTORY: contentHistory,
       },
       operation: 'regenerate-post',
       user: post.author,
@@ -334,6 +365,102 @@ router.post('/:id/regenerate', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ error: `Regeneration failed: ${error.message}` });
+  }
+});
+
+/**
+ * POST /api/posts/:id/generate-content — Generate content for a single post
+ * This is the per-post content generation endpoint. Called when user clicks
+ * "Generate Content" on an individual post instead of bulk generation.
+ */
+router.post('/:id/generate-content', async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    // If already has content, skip (unless force=true)
+    if (post.draftContent && post.draftContent.trim() !== '' && !req.body.force) {
+      res.json({ message: 'Post already has content', post });
+      return;
+    }
+
+    // Gather evidence context
+    const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
+
+    // Gather intelligence from past feedback
+    const intelligence = await getIntelligenceContext(post.format, post.platform, post.contentPillar);
+
+    // Choose prompt based on platform
+    const generatorPrompt = post.platform === 'instagram'
+      ? 'post-generator-instagram'
+      : 'post-generator-linkedin';
+
+    // Load past content history for de-duplication
+    const contentHistory = await getContentHistorySummary();
+
+    // Run AI agent-critique loop
+    const result = await runAgentCritiqueLoop({
+      generatorPrompt,
+      critiquePrompt: 'post-critique',
+      context: {
+        ...evidenceContext,
+        SIGNAL_TEXT: post.notes || '',
+        PLATFORM: post.platform,
+        FORMAT: post.format || 'text_post',
+        CONTENT_PILLAR: post.contentPillar || '',
+        CURRENT_CONTENT: '',
+        FEEDBACK_INTELLIGENCE: intelligence.promptAugmentation || '',
+        CONTENT_HISTORY: contentHistory,
+      },
+      operation: 'generate-post-content',
+      user: post.author,
+      relatedId: id as string,
+      relatedCollection: 'Post',
+    });
+
+    const parsed = result.parsed || {};
+    const useParsed = hasContentFields(parsed);
+
+    // Update the post with generated content
+    post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+    post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
+    post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
+    post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+    post.hashtags = useParsed ? (parsed.hashtags || post.hashtags) : post.hashtags;
+
+    if (parsed.carouselOutline && Array.isArray(parsed.carouselOutline)) {
+      post.draftCarouselOutline = parsed.carouselOutline.map((slide: any, idx: number) => ({
+        slideNumber: slide.slideNumber || idx + 1,
+        content: slide.headline ? `${slide.headline}\n${slide.bodyText || ''}` : slide.content || '',
+        type: idx === 0 ? 'hook' : (idx === parsed.carouselOutline.length - 1 ? 'cta' : 'content'),
+      }));
+    }
+
+    post.aiEvidence = {
+      strategyReferences: result.evidence.strategyReferences,
+      dataPoints: result.evidence.dataPoints,
+      signalFeedSources: post.aiEvidence?.signalFeedSources || [],
+      confidenceScore: result.critique.score / 10,
+      critiqueIterations: result.iterations,
+      finalCritiqueScore: result.critique.score,
+    };
+
+    await post.save();
+
+    console.log(`[Post Generate] Content generated for post ${id} (${post.format}, ${post.platform})`);
+
+    res.json({
+      message: 'Content generated',
+      post,
+    });
+  } catch (error: any) {
+    console.error(`[Post Generate] Failed for post ${id}:`, error.message);
+    res.status(500).json({ error: `Content generation failed: ${error.message}` });
   }
 });
 
@@ -426,6 +553,54 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
       return;
     }
 
+    const format = post.format?.toLowerCase() || '';
+
+    // ── CAROUSEL FORMAT: Generate PDF from slide outline ──
+    if (format === 'carousel' && imageType === 'carousel_pdf') {
+      const slides = post.draftCarouselOutline || [];
+      if (slides.length === 0) {
+        res.status(400).json({ error: 'No carousel slides found. Generate content first.' });
+        return;
+      }
+
+      const pdfResult = await generateCarouselPdf(
+        slides,
+        String(post._id),
+        post.contentPillar || 'Carousel',
+        post.author || ''
+      );
+
+      post.carouselPdfUrl = pdfResult.pdfUrl;
+      post.imageType = 'carousel_pdf';
+      post.imagePrompt = `Carousel PDF: ${slides.length} slides`;
+
+      // Also generate a cover image for carousel preview
+      if (isImageGenerationAvailable()) {
+        try {
+          const hookSlide = slides.find((s: any) => s.type === 'hook') || slides[0];
+          const coverPrompt = customPrompt || `Clean, bold typographic design for a LinkedIn carousel cover slide. Content: "${hookSlide.content.substring(0, 100)}". Modern, professional, eye-catching.`;
+          const imageResult = await generateAndStoreImage(coverPrompt, String(post._id), 1);
+          post.imageUrl = imageResult.imageUrl;
+          post.imageVariations = imageResult.imageVariations;
+        } catch (imgErr: any) {
+          console.warn(`[generate-image] Carousel cover image failed:`, imgErr.message);
+        }
+      }
+
+      await post.save();
+      res.json({
+        message: 'Carousel PDF generated',
+        carouselPdfUrl: post.carouselPdfUrl,
+        imageUrl: post.imageUrl || null,
+        slideCount: pdfResult.slideCount,
+      });
+      return;
+    }
+
+    // ── VIDEO FORMAT: Generate thumbnail (16:9) ──
+    const isVideo = format === 'video_caption';
+    const aspectRatio = isVideo ? '16:9' : '1:1';
+
     // Use orchestrator to generate an image prompt via AI
     const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
 
@@ -437,7 +612,9 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
         POST_CONTENT: post.draftContent || post.finalContent || '',
         PLATFORM: post.platform,
         IMAGE_TYPE: imageType,
-        CUSTOM_PROMPT: customPrompt || '',
+        CUSTOM_PROMPT: customPrompt || (isVideo
+          ? 'Create a compelling video thumbnail. Bold visual, high contrast, eye-catching. 16:9 aspect ratio.'
+          : ''),
         CONTENT_PILLAR: post.contentPillar || '',
       },
       operation: 'generate-image-prompt',
@@ -453,32 +630,66 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
     post.imageType = imageType;
     post.imagePrompt = generatedImagePrompt;
 
-    // Generate actual images via fal.ai + upload to S3
+    // Generate actual images via fal.ai + upload to storage
     if (isImageGenerationAvailable()) {
       try {
         const imageResult = await generateAndStoreImage(
           generatedImagePrompt,
           String(post._id),
-          1
+          1,
+          aspectRatio as any
         );
         post.imageUrl = imageResult.imageUrl;
         post.imageVariations = imageResult.imageVariations;
-        console.log(`[generate-image] Image generated for post ${post._id}: ${imageResult.imageUrl}`);
+        console.log(`[generate-image] ${isVideo ? 'Thumbnail' : 'Image'} generated for post ${post._id}: ${imageResult.imageUrl}`);
       } catch (imgErr: any) {
         console.error(`[generate-image] Image rendering failed, saving prompt only:`, imgErr.message);
-        // Graceful fallback: prompt is saved, image can be retried later
       }
     }
 
     await post.save();
 
     res.json({
-      message: post.imageUrl ? 'Image generated' : 'Image prompt generated (image rendering unavailable)',
+      message: post.imageUrl ? `${isVideo ? 'Thumbnail' : 'Image'} generated` : 'Image prompt generated (image rendering unavailable)',
       imageUrl: post.imageUrl || null,
       imagePrompt: generatedImagePrompt,
     });
   } catch (error: any) {
-    res.status(500).json({ error: `Image prompt generation failed: ${error.message}` });
+    res.status(500).json({ error: `Image generation failed: ${error.message}` });
+  }
+});
+
+/**
+ * GET /api/posts/:id/carousel-pdf
+ * Serves a locally-stored carousel PDF (fallback when Azure is not configured).
+ */
+router.get('/:id/carousel-pdf', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const post = await Post.findById(id);
+    if (!post) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    // If PDF is stored in Azure, redirect
+    if (post.carouselPdfUrl && post.carouselPdfUrl.startsWith('http')) {
+      res.redirect(post.carouselPdfUrl);
+      return;
+    }
+
+    // Serve from local temp directory
+    const tmpPath = path.join(os.tmpdir(), 'signal-carousels', `${id}.pdf`);
+    if (!fs.existsSync(tmpPath)) {
+      res.status(404).json({ error: 'Carousel PDF not found. Generate it first.' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="carousel-${id}.pdf"`);
+    fs.createReadStream(tmpPath).pipe(res);
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to serve carousel PDF: ${error.message}` });
   }
 });
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useStrategy } from '../contexts/StrategyContext';
 import { strategyAPI, analyticsAPI } from '../api/client';
 import EmptyState from '../components/shared/EmptyState';
@@ -17,6 +18,10 @@ import {
   TrendingUp,
   TrendingDown,
   Image as ImageIcon,
+  Lock,
+  Pencil,
+  Save,
+  X,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -607,12 +612,20 @@ function ReviewAndGenerate({
   const [savingSection, setSavingSection] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(['1']);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [dataSources, setDataSources] = useState<{
+    onboardingSections: number;
+    contentHistoryPosts: number;
+    hasPerformanceData: boolean;
+    performanceRecommendations: number;
+  } | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
     setErrorMsg(null);
+    setDataSources(null);
     try {
-      await strategyAPI.generate();
+      const { data } = await strategyAPI.generate();
+      if (data.dataSources) setDataSources(data.dataSources);
       await refresh();
     } catch (err: any) {
       console.error('Generation error:', err);
@@ -851,6 +864,19 @@ function ReviewAndGenerate({
           </h2>
           {hasGeneratedContent ? (
             <div className="space-y-4">
+              {/* Data sources banner */}
+              {dataSources && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  <span className="font-semibold">Data sources used:</span>{' '}
+                  {dataSources.onboardingSections} interview sections
+                  {dataSources.contentHistoryPosts > 0
+                    ? `, ${dataSources.contentHistoryPosts} past posts from content history`
+                    : ', no content history uploaded'}
+                  {dataSources.hasPerformanceData
+                    ? `, ${dataSources.performanceRecommendations} performance-based recommendations`
+                    : ', no performance data yet'}
+                </div>
+              )}
               <StrategySection title="North Star" content={strategy.northStar} />
               <StrategySection title="90-Day Goal" content={strategy.goal90Day} />
               <StrategySection
@@ -919,6 +945,45 @@ function LivingStrategyDocument({
   strategy: Strategy;
   onEditInputs: () => void;
 }) {
+  const { refresh } = useStrategy();
+  const navigate = useNavigate();
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+  const [editMessages, setEditMessages] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = (field: string, currentValue: string | string[]) => {
+    setEditingField(field);
+    if (Array.isArray(currentValue)) {
+      setEditMessages([...currentValue]);
+      setEditValue('');
+    } else {
+      setEditValue(currentValue || '');
+      setEditMessages([]);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingField(null);
+    setEditValue('');
+    setEditMessages([]);
+  };
+
+  const saveField = async (field: string, value: any) => {
+    setSaving(true);
+    try {
+      await strategyAPI.update(strategy._id, { [field]: value }, `Updated ${field}`);
+      await refresh();
+      setEditingField(null);
+      setEditValue('');
+      setEditMessages([]);
+    } catch (err) {
+      console.error('Failed to save:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -934,74 +999,304 @@ function LivingStrategyDocument({
           className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-900 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
         >
           <Edit3 size={14} />
-          Edit Inputs & Regenerate
+          Re-run Strategy Interview
         </button>
       </div>
 
-      <div className="space-y-6">
-        {/* North Star */}
-        <StrategySection title="North Star" content={strategy.northStar} />
-
-        {/* 90-Day Goal */}
-        <StrategySection title="90-Day Goal" content={strategy.goal90Day} />
-
-        {/* ICP */}
-        <StrategySection
-          title="Ideal Customer Profile"
-          content={<ICPContent strategy={strategy} />}
-        />
-
-        {/* Positioning */}
-        <StrategySection title="Positioning Statement" content={strategy.positioningStatement} />
-
-        {/* Content Pillars */}
-        <StrategySection
-          title="Content Pillars"
-          content={<ContentPillarsContent pillars={strategy.contentPillars} />}
-        />
-
-        {/* Key Messages */}
-        <StrategySection
-          title="Key Messages"
-          content={<KeyMessagesContent messages={strategy.keyMessages} />}
-        />
-
-        {/* Platform Strategy */}
-        {strategy.platformStrategy?.length > 0 && (
+      {/* ── Foundation: stable, rarely changes ── */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Lock size={14} className="text-slate-400" />
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            Foundation
+          </h2>
+          <span className="text-[10px] text-slate-300 ml-1">
+            Business context, ICP, positioning, pillars, voice
+          </span>
+          <button
+            onClick={() => navigate('/settings')}
+            className="ml-auto text-[11px] text-brand-coral hover:text-brand-coral/80 flex items-center gap-1"
+          >
+            <Pencil size={10} />
+            Edit in Settings
+          </button>
+        </div>
+        <div className="space-y-4">
+          <StrategySection title="North Star" content={strategy.northStar} />
           <StrategySection
-            title="Platform Strategy"
-            content={<PlatformStrategyContent platforms={strategy.platformStrategy} />}
+            title="Ideal Customer Profile"
+            content={<ICPContent strategy={strategy} />}
           />
-        )}
-
-        {/* Voice & Tone */}
-        {(strategy.voiceShohini || strategy.voiceSanjoy || strategy.sharedTone) && (
+          <StrategySection title="Positioning Statement" content={strategy.positioningStatement} />
           <StrategySection
-            title="Voice & Tone"
-            content={<VoiceToneContent strategy={strategy} />}
+            title="Content Pillars"
+            content={<ContentPillarsContent pillars={strategy.contentPillars} />}
           />
-        )}
-
-        {/* Metrics Targets */}
-        <StrategySection
-          title="Metrics Targets"
-          content={<MetricsTargetsContent targets={strategy.metricsTargets} />}
-        />
-
-        {/* Platform Benchmarks & Targets */}
-        {strategy.platformBenchmarks && Object.keys(strategy.platformBenchmarks).length > 0 && (
-          <StrategySection
-            title="Platform Benchmarks & Targets"
-            content={<PlatformBenchmarksContent benchmarks={strategy.platformBenchmarks} />}
-          />
-        )}
-
-        {/* Last Week Performance */}
-        <StrategySection
-          title="This Week's Performance"
-          content={<LastWeekPerformanceSummary />}
-        />
+          {strategy.platformStrategy?.length > 0 && (
+            <StrategySection
+              title="Platform Strategy"
+              content={<PlatformStrategyContent platforms={strategy.platformStrategy} />}
+            />
+          )}
+          {(strategy.voiceShohini || strategy.voiceSanjoy || strategy.sharedTone) && (
+            <StrategySection
+              title="Voice & Tone"
+              content={<VoiceToneContent strategy={strategy} />}
+            />
+          )}
+        </div>
       </div>
+
+      {/* ── Current Focus: changes often, inline-editable ── */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Pencil size={14} className="text-brand-coral" />
+          <h2 className="text-xs font-semibold text-brand-coral uppercase tracking-wider">
+            Current Focus
+          </h2>
+          <span className="text-[10px] text-slate-300 ml-1">
+            Goals, campaigns, metrics — click the pencil to edit directly
+          </span>
+        </div>
+        <div className="space-y-4">
+          {/* 90-Day Goal — editable */}
+          <EditableSection
+            title="90-Day Goal"
+            field="goal90Day"
+            value={strategy.goal90Day}
+            editingField={editingField}
+            editValue={editValue}
+            saving={saving}
+            onStartEdit={startEdit}
+            onCancel={cancelEdit}
+            onChange={setEditValue}
+            onSave={saveField}
+          />
+
+          {/* Key Messages — editable list */}
+          <EditableListSection
+            title="Key Messages"
+            field="keyMessages"
+            items={strategy.keyMessages}
+            editingField={editingField}
+            editMessages={editMessages}
+            saving={saving}
+            onStartEdit={startEdit}
+            onCancel={cancelEdit}
+            onChangeMessages={setEditMessages}
+            onSave={saveField}
+            renderView={<KeyMessagesContent messages={strategy.keyMessages} />}
+          />
+
+          {/* Metrics Targets */}
+          <StrategySection
+            title="Metrics Targets"
+            content={<MetricsTargetsContent targets={strategy.metricsTargets} />}
+          />
+
+          {/* Platform Benchmarks & Targets */}
+          {strategy.platformBenchmarks && Object.keys(strategy.platformBenchmarks).length > 0 && (
+            <StrategySection
+              title="Platform Benchmarks & Targets"
+              content={<PlatformBenchmarksContent benchmarks={strategy.platformBenchmarks} />}
+            />
+          )}
+
+          {/* Last Week Performance */}
+          <StrategySection
+            title="This Week's Performance"
+            content={<LastWeekPerformanceSummary />}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline-editable text section (for goal90Day etc.)
+// ---------------------------------------------------------------------------
+
+function EditableSection({
+  title,
+  field,
+  value,
+  editingField,
+  editValue,
+  saving,
+  onStartEdit,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  title: string;
+  field: string;
+  value: string;
+  editingField: string | null;
+  editValue: string;
+  saving: boolean;
+  onStartEdit: (field: string, value: string) => void;
+  onCancel: () => void;
+  onChange: (v: string) => void;
+  onSave: (field: string, value: string) => Promise<void>;
+}) {
+  const isEditing = editingField === field;
+
+  return (
+    <div className="bg-white border border-slate-200/60 rounded-xl shadow-sm p-5 group">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-brand-coral uppercase tracking-wider">
+          {title}
+        </h3>
+        {!isEditing && (
+          <button
+            onClick={() => onStartEdit(field, value)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-brand-coral"
+            title="Edit"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
+      </div>
+      {isEditing ? (
+        <div className="space-y-3">
+          <textarea
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            rows={3}
+            className="w-full text-sm border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-brand-coral/30 focus:border-brand-coral outline-none resize-y"
+          />
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+              disabled={saving}
+            >
+              <X size={12} className="inline mr-1" />
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(field, editValue)}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs bg-brand-coral text-white rounded-lg hover:bg-brand-coral/90 disabled:opacity-50 flex items-center gap-1"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-700 whitespace-pre-wrap">{value || 'Not set'}</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline-editable list section (for keyMessages etc.)
+// ---------------------------------------------------------------------------
+
+function EditableListSection({
+  title,
+  field,
+  items,
+  editingField,
+  editMessages,
+  saving,
+  onStartEdit,
+  onCancel,
+  onChangeMessages,
+  onSave,
+  renderView,
+}: {
+  title: string;
+  field: string;
+  items: string[];
+  editingField: string | null;
+  editMessages: string[];
+  saving: boolean;
+  onStartEdit: (field: string, value: string[]) => void;
+  onCancel: () => void;
+  onChangeMessages: (msgs: string[]) => void;
+  onSave: (field: string, value: string[]) => Promise<void>;
+  renderView: React.ReactNode;
+}) {
+  const isEditing = editingField === field;
+
+  const updateMessage = (idx: number, val: string) => {
+    const updated = [...editMessages];
+    updated[idx] = val;
+    onChangeMessages(updated);
+  };
+
+  const addMessage = () => onChangeMessages([...editMessages, '']);
+
+  const removeMessage = (idx: number) => {
+    onChangeMessages(editMessages.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="bg-white border border-slate-200/60 rounded-xl shadow-sm p-5 group">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-brand-coral uppercase tracking-wider">
+          {title}
+        </h3>
+        {!isEditing && (
+          <button
+            onClick={() => onStartEdit(field, items)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-brand-coral"
+            title="Edit"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
+      </div>
+      {isEditing ? (
+        <div className="space-y-3">
+          {editMessages.map((msg, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <input
+                value={msg}
+                onChange={(e) => updateMessage(i, e.target.value)}
+                className="flex-1 text-sm border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-brand-coral/30 focus:border-brand-coral outline-none"
+                placeholder={`Message ${i + 1}`}
+              />
+              <button
+                onClick={() => removeMessage(i)}
+                className="mt-2 text-slate-300 hover:text-red-500"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={addMessage}
+            className="text-xs text-brand-coral hover:text-brand-coral/80"
+          >
+            + Add message
+          </button>
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+              disabled={saving}
+            >
+              <X size={12} className="inline mr-1" />
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(field, editMessages.filter((m) => m.trim()))}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs bg-brand-coral text-white rounded-lg hover:bg-brand-coral/90 disabled:opacity-50 flex items-center gap-1"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        renderView
+      )}
     </div>
   );
 }

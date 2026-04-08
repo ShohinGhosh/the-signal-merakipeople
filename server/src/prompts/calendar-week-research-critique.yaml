@@ -1,7 +1,7 @@
 name: "calendar-week-research-critique"
 version: "1.0"
 description: "Critiques the special dates and trending topics research for accuracy and ICP relevance."
-model: "claude-3-5-sonnet-20241022"
+model: "claude-sonnet-4-20250514"
 max_tokens: 1000
 temperature: 0.3
 system_prompt: |

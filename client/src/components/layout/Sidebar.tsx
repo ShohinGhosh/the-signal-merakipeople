@@ -2,31 +2,25 @@ import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Compass,
-  Lightbulb,
+  BookOpen,
   Calendar,
   BarChart3,
-  Users,
   Settings,
-  Plus,
   ChevronLeft,
   ChevronRight,
-  LogOut,
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 import { useStrategy } from '../../contexts/StrategyContext';
 
 const NAV_ITEMS = [
   { path: '/strategy', label: 'Strategy', icon: Compass, requiresStrategy: false },
-  { path: '/insights', label: 'Insights', icon: Lightbulb, requiresStrategy: true },
+  { path: '/journal', label: 'Journal', icon: BookOpen, requiresStrategy: true },
   { path: '/calendar', label: 'Calendar', icon: Calendar, requiresStrategy: true },
   { path: '/analytics', label: 'Analytics', icon: BarChart3, requiresStrategy: true },
-  { path: '/leads', label: 'Leads', icon: Users, requiresStrategy: true },
   { path: '/settings', label: 'Settings', icon: Settings, requiresStrategy: false },
 ];
 
-export default function Sidebar({ onAddSignal }: { onAddSignal: () => void }) {
+export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const { user, logout } = useAuth();
   const { isComplete } = useStrategy();
 
   return (
@@ -85,42 +79,6 @@ export default function Sidebar({ onAddSignal }: { onAddSignal: () => void }) {
           );
         })}
       </nav>
-
-      {/* Add Insight Button */}
-      <div className="px-4 py-2">
-        <button
-          onClick={onAddSignal}
-          disabled={!isComplete}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            isComplete
-              ? 'bg-brand-coral text-white hover:bg-brand-coral/90'
-              : 'bg-white/10 text-white/30 cursor-not-allowed'
-          }`}
-        >
-          <Plus size={16} />
-          {!collapsed && 'Add Insight'}
-        </button>
-      </div>
-
-      {/* User section */}
-      <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-brand-coral/20 flex items-center justify-center text-brand-coral font-medium text-sm">
-            {user?.name?.[0] || '?'}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{user?.name}</div>
-              <div className="text-xs text-white/50 capitalize">{user?.role}</div>
-            </div>
-          )}
-          {!collapsed && (
-            <button onClick={logout} className="text-white/30 hover:text-white/70" title="Logout">
-              <LogOut size={14} />
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Collapse toggle */}
       <button

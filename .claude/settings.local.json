@@ -14,7 +14,28 @@
       "Bash(node --version)",
       "Bash(npm --version)",
       "Bash(git init)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm install:*)",
+      "Bash(xargs grep:*)",
+      "Bash(find \"C:\\\\Users\\\\ahams\\\\OneDrive\\\\Documents\\\\Outreach Agent\\\\client\\\\src\" -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" \\\\\\) -exec wc -l {} +)",
+      "Bash(grep -r \"pdf\\\\|PDF\" '/c/Users/ahams/OneDrive/Documents/Outreach Agent' --include=*.json --include=*.ts --include=*.tsx)",
+      "Bash(nslookup _mongodb._tcp.testdb.a204r.mongodb.net)",
+      "Bash(nslookup testdb-shard-00-00.a204r.mongodb.net)",
+      "Bash(nslookup testdb-shard-00-01.a204r.mongodb.net)",
+      "Bash(nslookup testdb-shard-00-02.a204r.mongodb.net)",
+      "Bash(node -e \":*)",
+      "Bash(timeout 10 npx tsx server/src/index.ts)",
+      "Bash(taskkill /f /im node.exe)",
+      "Bash(npx tsc:*)",
+      "Bash(curl -s http://localhost:5001/api-docs)",
+      "Bash(npx kill-port:*)",
+      "Bash(netstat -ano)",
+      "WebFetch(domain:www.linkedin.com)",
+      "Bash(curl -s http://localhost:5001/api/content-history/insights -H \"Authorization: Bearer test\")",
+      "Bash(timeout 5)",
+      "Bash(timeout 3)",
+      "Bash(timeout 2)"
     ]
   }
 }

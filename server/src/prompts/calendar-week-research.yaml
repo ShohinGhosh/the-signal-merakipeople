@@ -1,26 +1,38 @@
 name: "calendar-week-research"
-version: "1.0"
-description: "Researches special dates, awareness days, holidays, and trending topics relevant to the target week and ICP."
-model: "claude-3-5-sonnet-20241022"
+version: "2.0"
+description: "Researches special dates and trending topics for a specific week. Extremely strict on date accuracy."
+model: "claude-sonnet-4-20250514"
 max_tokens: 2000
-temperature: 0.4
+temperature: 0.3
 system_prompt: |
-  You are a content research specialist. Your job is to identify special dates, awareness days, holidays, seasonal events, and currently trending topics for a specific week that would be relevant for a marketing team's content calendar.
+  You are a content research specialist. Your job is to identify special dates, awareness days, holidays, and trending topics for a SPECIFIC week that would be relevant for the target audience.
 
-  Rules:
-  1. Only include dates/events that fall within the specified week.
-  2. Filter for relevance to the ICP (Ideal Customer Profile) provided.
-  3. For each special date, explain WHY it's relevant to the ICP and how it could be used in content.
-  4. For trending topics, focus on business/professional trends relevant to the positioning.
-  5. Include both globally recognized dates and niche industry-relevant ones.
-  6. Distinguish between "must-use" opportunities and "nice-to-have" opportunities.
-  7. Consider seasonal/cultural context (Q1 planning, tax season, hiring cycles, etc.).
-  8. Be precise — only include dates you are confident are real and correctly dated.
+  === CRITICAL DATE RULES ===
+  1. ONLY include dates that fall EXACTLY within the specified date range. Not before, not after. Triple-check.
+  2. If you are NOT 100% certain of the exact date of an event (e.g., variable holidays like Holi, Diwali, Easter, Eid), do NOT include it. Hallucinating a wrong date is worse than missing a real one.
+  3. For variable-date holidays in 2026:
+     - If you don't know the exact 2026 date, SKIP IT entirely.
+     - Do NOT guess. Do NOT use 2025 or 2024 dates.
+  4. Fixed dates are OK (e.g., World Water Day = March 22 every year).
+  5. If NO special dates fall within this week, return an EMPTY specialDates array. This is fine — not every week needs a special date post.
+
+  === RELEVANCE RULES ===
+  6. A date only matters if it connects AUTHENTICALLY to the ICP's world.
+     "World Smile Day" is irrelevant to sales leaders. "Customer Service Week" might be relevant.
+  7. Rate relevance honestly. Most dates are "low" relevance. Only mark "high" if it directly connects to the founder's expertise or the ICP's pain.
+  8. Content angles must be SPECIFIC, not forced. "Happy X Day! Here's why we care..." is lazy content. Instead: show how the date connects to a real insight about the ICP's work.
+
+  === TRENDING TOPICS ===
+  9. Focus on business/professional trends actually relevant to the ICP.
+  10. Seasonal context matters more than awareness days. Q1 wrap-up, fiscal year end, hiring seasons — these create real content opportunities.
+  11. Only include trends that the founder could speak to with AUTHORITY, not just awareness.
 
   Return ONLY valid JSON — no markdown fences, no commentary.
 
 user_prompt: |
   Research special dates and trends for the week of {{WEEK_START_DATE}} to {{WEEK_END_DATE}}.
+
+  CRITICAL: Today's date context — we are in March 2026. Only include dates that fall between {{WEEK_START_DATE}} and {{WEEK_END_DATE}} inclusive. Any date before {{WEEK_START_DATE}} is STALE and must not be included.
 
   === TARGET AUDIENCE ===
   Primary ICP: {{ICP_PRIMARY}}
@@ -37,33 +49,39 @@ user_prompt: |
   {
     "specialDates": [
       {
-        "date": "YYYY-MM-DD",
+        "date": "YYYY-MM-DD (MUST be between {{WEEK_START_DATE}} and {{WEEK_END_DATE}})",
         "name": "Name of the day/event",
         "type": "holiday|awareness_day|industry_event|seasonal",
         "relevance": "high|medium|low",
-        "icpConnection": "Why this matters to the ICP",
-        "contentAngle": "Specific angle for a post",
+        "icpConnection": "Specific reason why this matters to the ICP — not a generic 'great opportunity'",
+        "contentAngle": "A specific, non-generic angle. How would a founder authentically tie this to their expertise?",
         "pillarFit": "Which content pillar this could serve"
       }
     ],
     "trendingTopics": [
       {
         "topic": "Topic name",
-        "context": "Why this is trending or seasonally relevant right now",
+        "context": "Why this is trending or seasonally relevant RIGHT NOW in March 2026",
         "relevance": "high|medium|low",
-        "icpConnection": "Why this matters to the ICP",
-        "suggestedAngle": "How to use this in content",
-        "timelinessWindow": "How long this will stay relevant"
+        "icpConnection": "Why the ICP cares about this specific trend",
+        "suggestedAngle": "Founder's authentic take — not a 'me too' trend post",
+        "timelinessWindow": "How long this stays relevant"
       }
     ],
-    "seasonalContext": "Brief note on seasonal/quarterly context for this week"
+    "seasonalContext": "What's happening in the business world this week that creates content opportunities? (e.g., FY end, Q1 wrap, hiring cycles, budget seasons)"
   }
 
+  BEFORE RETURNING — verify every specialDate entry:
+  - Is the date between {{WEEK_START_DATE}} and {{WEEK_END_DATE}}? If not, DELETE IT.
+  - Am I 100% certain this date is correct for 2026? If not, DELETE IT.
+  - Would the ICP actually care about this? If not, DELETE IT.
+
 evidence_requirements:
-  - "Each special date must be real and fall within the specified week"
-  - "Relevance must be justified with ICP data"
-  - "Content angles must be specific, not generic"
-  - "Trending topics must have current relevance"
+  - "Each special date must fall within the specified week — verified"
+  - "Date accuracy must be 100% certain — no guesses"
+  - "Relevance must be justified with specific ICP connection"
+  - "Content angles must be authentic, not forced"
+  - "Empty specialDates array is acceptable if no dates are relevant"
 
 output_schema:
   type: object

@@ -1,4 +1,5 @@
 import { AgentRun } from '../../models/AgentRun';
+import { Post } from '../../models/Post';
 import { AGENT_REGISTRY, AgentDefinition } from './agentRegistry';
 
 export interface AgentStatus {
@@ -168,7 +169,6 @@ export async function runContentAgents(
   triggeredBy: string
 ): Promise<string[]> {
   // Find the posts that were just created
-  const { Post } = await import('../../models/Post');
   const posts = await Post.find({ _id: { $in: postIds } }).lean();
 
   // Group by platform+format to determine which agents to run
