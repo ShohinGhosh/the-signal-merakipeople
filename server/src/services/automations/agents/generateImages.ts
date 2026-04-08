@@ -155,7 +155,7 @@ async function handleCarousel(post: InstanceType<any>): Promise<void> {
   const slides = post.draftCarouselOutline || [];
 
   if (slides.length > 0) {
-    // Generate the carousel PDF
+    // Generate carousel PDF with AI-generated slide images (Nano Banana Pro)
     const pdfResult = await generateCarouselPdf(
       slides,
       String(post._id),
@@ -164,25 +164,13 @@ async function handleCarousel(post: InstanceType<any>): Promise<void> {
     );
     post.carouselPdfUrl = pdfResult.pdfUrl;
     post.imageType = 'carousel_pdf';
-    post.imagePrompt = `Carousel PDF: ${slides.length} slides`;
+    post.imagePrompt = `Carousel PDF: ${slides.length} slides (AI-generated images)`;
     console.log(`[Agent generate-images] Carousel PDF: ${pdfResult.slideCount} slides → ${pdfResult.pdfUrl}`);
-  }
 
-  // Also generate a cover image for the carousel (first slide as visual)
-  if (isImageGenerationAvailable() && slides.length > 0) {
-    const hookSlide = slides.find((s: any) => s.type === 'hook') || slides[0];
-    const coverPrompt = `Clean, bold typographic design for a LinkedIn carousel cover slide. Content: "${hookSlide.content.substring(0, 100)}". Modern, professional, eye-catching. Solid background with accent color.`;
-
-    try {
-      const imageResult = await generateAndStoreImage(
-        coverPrompt,
-        String(post._id),
-        1
-      );
-      post.imageUrl = imageResult.imageUrl;
-      post.imageVariations = imageResult.imageVariations;
-    } catch (imgErr: any) {
-      console.warn(`[Agent generate-images] Carousel cover image failed for ${post._id}:`, imgErr.message);
+    // Use the first slide image as the cover/preview image
+    if (pdfResult.slideImageUrls.length > 0) {
+      post.imageUrl = pdfResult.slideImageUrls[0];
+      post.imageVariations = pdfResult.slideImageUrls;
     }
   }
 

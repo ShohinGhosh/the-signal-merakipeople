@@ -145,7 +145,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const posts = await Post.find(query)
-      .select('_id author platform contentPillar format status scheduledAt linkedinHook')
+      .select('_id author platform contentPillar format status scheduledAt linkedinHook instagramHook notes cta draftContent draftCarouselOutline imageUrl imagePrompt imageType imageVariations carouselPdfUrl aiEvidence hashtags approved finalContent')
       .sort({ scheduledAt: 1 })
       .lean();
 

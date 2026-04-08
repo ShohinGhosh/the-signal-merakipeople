@@ -1384,24 +1384,61 @@ function ContentCard({
                 )}
 
                 {/* Carousel PDF download */}
-                {post.carouselPdfUrl ? (
-                  <a
-                    href={post.carouselPdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-purple-700 hover:bg-purple-100 transition-colors mb-2"
-                  >
-                    <FileDown size={14} />
-                    <div className="flex-1">
-                      <span className="text-xs font-medium">Carousel PDF</span>
-                      <span className="text-[10px] text-purple-400 block">{post.draftCarouselOutline?.length || 0} slides</span>
-                    </div>
-                    <ExternalLink size={12} className="text-purple-400" />
-                  </a>
-                ) : post.draftCarouselOutline?.length > 0 ? (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-slate-400 mb-2">
-                    <FileDown size={14} />
-                    <span className="text-xs">PDF will be generated on approval</span>
+                {post.draftCarouselOutline?.length > 0 ? (
+                  <div className="flex gap-1.5 mb-2">
+                    {/* Generate / Regenerate PDF button */}
+                    <button
+                      onClick={async () => {
+                        setGeneratingContent(true);
+                        try {
+                          await postsAPI.generateImage(post._id, { imageType: 'carousel_pdf' });
+                          onPostUpdate();
+                        } catch (err) {
+                          console.error('Carousel PDF generation failed:', err);
+                        } finally {
+                          setGeneratingContent(false);
+                        }
+                      }}
+                      disabled={generatingContent}
+                      className="flex items-center gap-2 px-3 py-2.5 flex-1 bg-gradient-to-r from-purple-50 to-purple-100 border border-purple-200 rounded-lg text-purple-700 hover:from-purple-100 hover:to-purple-200 transition-all disabled:opacity-50"
+                    >
+                      {generatingContent ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={14} />
+                      )}
+                      <div className="flex-1 text-left">
+                        <span className="text-xs font-medium">
+                          {generatingContent ? 'Generating...' : post.carouselPdfUrl ? 'Regenerate PDF' : 'Generate Carousel PDF'}
+                        </span>
+                        <span className="text-[10px] text-purple-400 block">{post.draftCarouselOutline.length} slides</span>
+                      </div>
+                    </button>
+
+                    {/* Download button — only when PDF exists */}
+                    {post.carouselPdfUrl && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { data } = await postsAPI.downloadCarouselPdf(post._id);
+                            const blob = new Blob([data], { type: 'application/pdf' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `carousel-${post.contentPillar || 'post'}.pdf`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                          } catch (err) {
+                            console.error('PDF download failed:', err);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                        title="Download PDF"
+                      >
+                        <FileDown size={14} />
+                        <span className="text-xs font-medium">Download</span>
+                      </button>
+                    )}
                   </div>
                 ) : null}
 

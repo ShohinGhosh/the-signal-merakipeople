@@ -90,6 +90,8 @@ export const postsAPI = {
   get: (id: string) => api.get(`/posts/${id}`),
   update: (id: string, data: any) => api.put(`/posts/${id}`, data),
   delete: (id: string) => api.delete(`/posts/${id}`),
+  downloadCarouselPdf: (id: string) =>
+    api.get(`/posts/${id}/carousel-pdf`, { responseType: 'blob' }),
 };
 
 // ============ Calendar API ============

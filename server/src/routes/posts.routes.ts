@@ -573,6 +573,7 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
       post.carouselPdfUrl = pdfResult.pdfUrl;
       post.imageType = 'carousel_pdf';
       post.imagePrompt = `Carousel PDF: ${slides.length} slides`;
+      console.log(`[generate-image] Setting carouselPdfUrl = ${pdfResult.pdfUrl}`);
 
       // Also generate a cover image for carousel preview
       if (isImageGenerationAvailable()) {
@@ -587,7 +588,15 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
         }
       }
 
-      await post.save();
+      try {
+        await post.save();
+        console.log(`[generate-image] Post saved. carouselPdfUrl in DB: ${post.carouselPdfUrl}`);
+      } catch (saveErr: any) {
+        console.error(`[generate-image] SAVE FAILED:`, saveErr.message);
+        res.status(500).json({ error: 'Failed to save carousel PDF', details: saveErr.message });
+        return;
+      }
+
       res.json({
         message: 'Carousel PDF generated',
         carouselPdfUrl: post.carouselPdfUrl,
