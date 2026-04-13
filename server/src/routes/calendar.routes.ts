@@ -10,6 +10,13 @@ import { getIntelligenceContext } from '../services/feedback/intelligenceService
 
 const router = Router();
 
+/**
+ * Format a Date to YYYY-MM-DD in local timezone (avoids UTC shift issues for IST users).
+ */
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Generation progress tracker (in-memory)
 let generationProgress: { active: boolean; step: string; startedAt: Date | null } = {
   active: false, step: '', startedAt: null,
@@ -153,7 +160,7 @@ router.get('/', async (req: Request, res: Response) => {
     const dayMap: Record<string, any[]> = {};
     for (const post of posts) {
       if (!post.scheduledAt) continue;
-      const dateKey = new Date(post.scheduledAt).toISOString().slice(0, 10);
+      const dateKey = toLocalDateStr(new Date(post.scheduledAt));
       if (!dayMap[dateKey]) dayMap[dateKey] = [];
       dayMap[dateKey].push(post);
     }
@@ -1179,12 +1186,12 @@ router.get('/week', async (req: Request, res: Response) => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(weekStart);
       d.setDate(weekStart.getDate() + i);
-      days[d.toISOString().slice(0, 10)] = [];
+      days[toLocalDateStr(d)] = [];
     }
 
     for (const post of posts) {
       if (post.scheduledAt) {
-        const dateKey = new Date(post.scheduledAt).toISOString().slice(0, 10);
+        const dateKey = toLocalDateStr(new Date(post.scheduledAt));
         if (days[dateKey]) {
           days[dateKey].push(post);
         }
