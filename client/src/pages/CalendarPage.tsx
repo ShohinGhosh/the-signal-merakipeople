@@ -130,7 +130,7 @@ export default function CalendarPage() {
   const genProgressRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoRegenPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const weekStartStr = weekStart.toISOString().slice(0, 10);
+  const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
   // Poll for auto-regeneration status (triggered by Journal accept)
   useEffect(() => {
@@ -1736,7 +1736,8 @@ function CalendarView({
     return d;
   });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const handleDrop = async (targetDate: string) => {
     if (!draggingPostId) return;
@@ -1753,7 +1754,7 @@ function CalendarView({
   return (
     <div className="grid grid-cols-7 gap-2 flex-1">
       {days.map((day) => {
-        const dateKey = day.toISOString().slice(0, 10);
+        const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
         const dayPosts = weekData.days[dateKey] || [];
         const isToday = dateKey === today;
         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
