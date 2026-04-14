@@ -575,17 +575,10 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
       post.imagePrompt = `Carousel PDF: ${slides.length} slides`;
       console.log(`[generate-image] Setting carouselPdfUrl = ${pdfResult.pdfUrl}`);
 
-      // Also generate a cover image for carousel preview
-      if (isImageGenerationAvailable()) {
-        try {
-          const hookSlide = slides.find((s: any) => s.type === 'hook') || slides[0];
-          const coverPrompt = customPrompt || `Clean, bold typographic design for a LinkedIn carousel cover slide. Content: "${hookSlide.content.substring(0, 100)}". Modern, professional, eye-catching.`;
-          const imageResult = await generateAndStoreImage(coverPrompt, String(post._id), 1);
-          post.imageUrl = imageResult.imageUrl;
-          post.imageVariations = imageResult.imageVariations;
-        } catch (imgErr: any) {
-          console.warn(`[generate-image] Carousel cover image failed:`, imgErr.message);
-        }
+      // Use the first slide screenshot as cover image (from Puppeteer render)
+      if (pdfResult.slideImageUrls.length > 0) {
+        post.imageUrl = pdfResult.slideImageUrls[0]; // /api/posts/:id/carousel-slide/1
+        post.imageVariations = pdfResult.slideImageUrls;
       }
 
       try {
@@ -602,6 +595,7 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
         carouselPdfUrl: post.carouselPdfUrl,
         imageUrl: post.imageUrl || null,
         slideCount: pdfResult.slideCount,
+        slideImageUrls: pdfResult.slideImageUrls,
       });
       return;
     }
@@ -699,6 +693,46 @@ router.get('/:id/carousel-pdf', async (req: Request, res: Response) => {
     fs.createReadStream(tmpPath).pipe(res);
   } catch (error: any) {
     res.status(500).json({ error: `Failed to serve carousel PDF: ${error.message}` });
+  }
+});
+
+/**
+ * GET /api/posts/:id/carousel-slide/:num
+ * Serves an individual slide image (PNG) for carousel preview.
+ */
+router.get('/:id/carousel-slide/:num', async (req: Request, res: Response) => {
+  const { id, num } = req.params;
+  try {
+    const tmpPath = path.join(os.tmpdir(), 'signal-carousels', id, `slide-${num}.png`);
+    if (!fs.existsSync(tmpPath)) {
+      res.status(404).json({ error: `Slide ${num} not found.` });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    fs.createReadStream(tmpPath).pipe(res);
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to serve slide image: ${error.message}` });
+  }
+});
+
+/**
+ * GET /api/posts/:id/cover-image
+ * Serves a locally-stored cover image (fallback when Azure is not configured).
+ */
+router.get('/:id/cover-image', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const tmpPath = path.join(os.tmpdir(), 'signal-covers', `${id}.png`);
+    if (!fs.existsSync(tmpPath)) {
+      res.status(404).json({ error: 'Cover image not found.' });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    fs.createReadStream(tmpPath).pipe(res);
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to serve cover image: ${error.message}` });
   }
 });
 

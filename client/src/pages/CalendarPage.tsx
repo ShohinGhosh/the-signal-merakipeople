@@ -1532,11 +1532,13 @@ function ContentCard({
               )}
             </div>
 
-            {/* Visual area — Carousel format (cover image + PDF) */}
+            {/* Visual area — Carousel format (slide preview + PDF) */}
             {fmt === 'carousel' && (
               <div className="border-l border-slate-100 p-4">
-                {/* Cover image */}
-                {post.imageUrl ? (
+                {/* Slide preview — show all slides or cover */}
+                {post.imageVariations && post.imageVariations.length > 1 ? (
+                  <CarouselSlidePreview slides={post.imageVariations} />
+                ) : post.imageUrl ? (
                   <img
                     src={post.imageUrl}
                     alt="Carousel cover"
@@ -1547,7 +1549,7 @@ function ContentCard({
                     <div className="text-center text-purple-300">
                       <Layers size={24} className="mx-auto mb-1" />
                       <span className="text-xs">
-                        {post.imagePrompt ? 'Generating cover...' : 'No cover image'}
+                        {generatingContent ? 'Generating slides...' : 'Generate PDF to preview'}
                       </span>
                     </div>
                   </div>
@@ -1767,6 +1769,59 @@ function ContentCard({
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ============ Carousel Slide Preview (swipeable) ============
+function CarouselSlidePreview({ slides }: { slides: string[] }) {
+  const [activeIdx, setActiveIdx] = React.useState(0);
+
+  return (
+    <div className="mb-2">
+      {/* Main slide image */}
+      <div className="relative group">
+        <img
+          src={slides[activeIdx]}
+          alt={`Slide ${activeIdx + 1}`}
+          className="w-full rounded-lg border border-slate-200"
+        />
+        {/* Nav arrows */}
+        {activeIdx > 0 && (
+          <button
+            onClick={() => setActiveIdx(activeIdx - 1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:bg-white"
+          >
+            <ChevronLeft size={16} />
+          </button>
+        )}
+        {activeIdx < slides.length - 1 && (
+          <button
+            onClick={() => setActiveIdx(activeIdx + 1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:bg-white"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
+        {/* Slide counter */}
+        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/50 rounded text-white text-xs font-medium">
+          {activeIdx + 1} / {slides.length}
+        </div>
+      </div>
+      {/* Dot indicators */}
+      <div className="flex justify-center gap-1.5 mt-2">
+        {slides.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setActiveIdx(i)}
+            className={`rounded-full transition-all ${
+              i === activeIdx
+                ? 'w-5 h-2 bg-purple-500'
+                : 'w-2 h-2 bg-slate-300 hover:bg-slate-400'
+            }`}
+          />
+        ))}
+      </div>
     </div>
   );
 }

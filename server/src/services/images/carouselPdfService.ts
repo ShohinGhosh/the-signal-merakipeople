@@ -1,8 +1,6 @@
+import puppeteer from 'puppeteer';
 import PDFDocument from 'pdfkit';
 import { uploadImageToAzure, isAzureConfigured } from './azureBlobClient';
-import { generateImageWithGemini, isGeminiImageAvailable } from './geminiImageClient';
-import { generateImage } from './falClient';
-import { isImageGenerationAvailable } from './imageService';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -14,472 +12,767 @@ export interface CarouselSlideInput {
 }
 
 export interface CarouselPdfResult {
-  /** The PDF URL (Azure Blob or local temp path) */
   pdfUrl: string;
-  /** Whether the PDF is stored permanently */
   isPermanent: boolean;
-  /** Number of slides rendered */
   slideCount: number;
-  /** Individual slide image URLs (for preview) */
   slideImageUrls: string[];
 }
 
+const S = 1080; // slide size in px
+
 /* ─────────────────────────────────────────────
-   Brand Design System — The Signal
+   Brand tokens — matching MerakiPeople / NotebookLM style
    ───────────────────────────────────────────── */
-const C = {
-  // Primary palette
-  navy:        '#0F0D2E',
-  navyMid:     '#1E1B4B',
-  navyLight:   '#2D2A5E',
-  indigo:      '#4338CA',
-  indigoLight: '#6366F1',
-
-  // Accent
-  coral:       '#FF6B6B',
-  coralSoft:   '#FF8A8A',
-  coralGlow:   '#FF5252',
-  amber:       '#F59E0B',
-  emerald:     '#10B981',
-
-  // Neutral
-  white:       '#FFFFFF',
-  white90:     '#E8E8F0',
-  white60:     '#9B9BB0',
-  white40:     '#6B6B80',
-  slate50:     '#F8FAFC',
-  slate100:    '#F1F5F9',
-  slate200:    '#E2E8F0',
-  slate700:    '#334155',
-  slate900:    '#0F172A',
-
-  // Gradients (as pairs)
-  gradDark:    ['#0F0D2E', '#1E1B4B'],
-  gradCoral:   ['#FF6B6B', '#FF5252'],
-  gradIndigo:  ['#4338CA', '#6366F1'],
+const B = {
+  pageBg:     '#E8EDF5',   // soft blue-grey page
+  white:      '#FFFFFF',
+  cardBg:     '#FFFFFF',
+  headBlack:  '#1A1A2E',   // near-black for big headings
+  bodyGrey:   '#4A4A5A',   // body text
+  mutedGrey:  '#8B8B9E',   // captions
+  lightGrey:  '#C8CDD8',   // borders, subtle elements
+  coral:      '#FF6F61',   // accent — callouts, highlights, icons
+  coralLight: '#FFF0EE',   // coral tint bg
+  coralDark:  '#E85A4F',
+  navy:       '#152B68',   // illustrations, icons
+  navyLight:  '#2A4494',
+  navyTint:   '#E8ECF5',   // light navy tint
+  teal:       '#0EA5A0',   // secondary accent
+  tealLight:  '#E6F7F6',
 };
 
-const PAGE = 540; // 540pt = 1080px at 2x
+/* ═══════════════════════════════════════════════════
+   SHARED STYLES
+   ═══════════════════════════════════════════════════ */
 
-/* ─────────────────────────────────────────────
-   Helper: draw a rounded rectangle path
-   ───────────────────────────────────────────── */
-function roundedRect(
-  doc: InstanceType<typeof PDFDocument>,
-  x: number, y: number, w: number, h: number, r: number
-) {
-  doc.moveTo(x + r, y)
-     .lineTo(x + w - r, y)
-     .quadraticCurveTo(x + w, y, x + w, y + r)
-     .lineTo(x + w, y + h - r)
-     .quadraticCurveTo(x + w, y + h, x + w - r, y + h)
-     .lineTo(x + r, y + h)
-     .quadraticCurveTo(x, y + h, x, y + h - r)
-     .lineTo(x, y + r)
-     .quadraticCurveTo(x, y, x + r, y);
+/** Font links — empty by default; fonts are pre-loaded once on the page before rendering slides */
+function fontLinks(): string {
+  return '';
+}
+
+function baseStyles(): string {
+  return `
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: ${S}px;
+      height: ${S}px;
+      overflow: hidden;
+      font-family: 'Inter', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: ${B.pageBg};
+    }
+
+    .slide {
+      width: ${S}px;
+      height: ${S}px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: ${B.pageBg};
+      padding: 48px;
+    }
+
+    /* ── Serif heading (editorial) ── */
+    .serif { font-family: 'DM Serif Display', Georgia, serif; }
+
+    /* ── Top bar ── */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+      flex-shrink: 0;
+    }
+    .slide-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      height: 32px;
+      padding: 0 14px;
+      border-radius: 16px;
+      background: ${B.navy};
+      color: #FFF;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+    }
+    .brand-tag {
+      font-size: 12px;
+      font-weight: 500;
+      color: ${B.mutedGrey};
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: ${B.cardBg};
+      border-radius: 20px;
+      padding: 52px 56px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.04);
+    }
+
+    /* ── Bottom branding ── */
+    .bottom-brand {
+      position: absolute;
+      bottom: 28px;
+      right: 52px;
+      font-size: 13px;
+      font-weight: 600;
+      color: ${B.navy};
+      letter-spacing: 0.3px;
+      opacity: 0.5;
+    }
+
+    /* ── Dots ── */
+    .dot-row {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: ${B.lightGrey};
+    }
+    .dot.active {
+      width: 24px;
+      border-radius: 4px;
+      background: ${B.coral};
+    }
+
+    /* ── Accent bubble (coral callout) ── */
+    .bubble {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      background: ${B.coralLight};
+      border-radius: 12px;
+      color: ${B.coral};
+      font-weight: 600;
+      font-size: 17px;
+    }
+    .bubble-arrow {
+      position: relative;
+    }
+    .bubble-arrow::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 24px;
+      width: 0; height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid ${B.coralLight};
+    }
+
+    /* ── Feature card row ── */
+    .feature-row {
+      display: flex;
+      gap: 24px;
+      margin-top: 32px;
+    }
+    .feature-card {
+      flex: 1;
+      background: ${B.white};
+      border: 1.5px solid ${B.lightGrey};
+      border-radius: 16px;
+      padding: 32px 24px;
+      text-align: center;
+    }
+    .feature-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 28px;
+    }
+    .feature-title {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 19px;
+      color: ${B.headBlack};
+      margin-bottom: 8px;
+    }
+    .feature-desc {
+      font-size: 14px;
+      color: ${B.mutedGrey};
+      line-height: 1.5;
+    }
+
+    /* ── Illustration helpers ── */
+    .illust-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+  `;
+}
+
+/* ═══════════════════════════════════════════════════
+   SVG ILLUSTRATIONS — simple, clean, topic-adaptive
+   ═══════════════════════════════════════════════════ */
+
+/** Pick an illustration SVG based on slide content keywords */
+function pickIllustration(content: string, type: string, slideNum: number): string {
+  const text = content.toLowerCase();
+
+  // Keyword → illustration mapping
+  if (text.includes('team') || text.includes('people') || text.includes('hire') || text.includes('rep'))
+    return svgTeam();
+  if (text.includes('data') || text.includes('chart') || text.includes('metric') || text.includes('analytics') || text.includes('number'))
+    return svgChart();
+  if (text.includes('growth') || text.includes('scale') || text.includes('revenue') || text.includes('result'))
+    return svgGrowth();
+  if (text.includes('process') || text.includes('system') || text.includes('framework') || text.includes('step'))
+    return svgProcess();
+  if (text.includes('brain') || text.includes('think') || text.includes('mindset') || text.includes('strategy') || text.includes('intelligence'))
+    return svgBrain();
+  if (text.includes('time') || text.includes('fast') || text.includes('speed') || text.includes('week') || text.includes('month'))
+    return svgClock();
+  if (text.includes('connect') || text.includes('network') || text.includes('relationship') || text.includes('community'))
+    return svgNetwork();
+  if (text.includes('target') || text.includes('goal') || text.includes('focus') || text.includes('icp'))
+    return svgTarget();
+  if (text.includes('money') || text.includes('cost') || text.includes('price') || text.includes('roi') || text.includes('₹') || text.includes('$'))
+    return svgMoney();
+  if (text.includes('problem') || text.includes('challenge') || text.includes('pain') || text.includes('struggle'))
+    return svgProblem();
+
+  // Cycle through general illustrations
+  const fallbacks = [svgLightbulb, svgRocket, svgPuzzle, svgMegaphone, svgShield];
+  return fallbacks[slideNum % fallbacks.length]();
+}
+
+function svgTeam(): string {
+  return `<svg width="200" height="160" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="100" cy="40" r="22" fill="${B.navy}" opacity="0.15"/>
+    <circle cx="100" cy="40" r="16" fill="${B.navy}"/>
+    <rect x="80" y="65" width="40" height="45" rx="8" fill="${B.navy}"/>
+    <circle cx="50" cy="55" r="14" fill="${B.coral}" opacity="0.2"/>
+    <circle cx="50" cy="55" r="10" fill="${B.coral}"/>
+    <rect x="35" y="72" width="30" height="35" rx="6" fill="${B.coral}" opacity="0.8"/>
+    <circle cx="150" cy="55" r="14" fill="${B.coral}" opacity="0.2"/>
+    <circle cx="150" cy="55" r="10" fill="${B.coral}"/>
+    <rect x="135" y="72" width="30" height="35" rx="6" fill="${B.coral}" opacity="0.8"/>
+    <path d="M65 90 Q100 130 135 90" stroke="${B.navy}" stroke-width="2" stroke-dasharray="4 4" fill="none" opacity="0.3"/>
+  </svg>`;
+}
+
+function svgChart(): string {
+  return `<svg width="200" height="160" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="20" y="100" width="30" height="50" rx="4" fill="${B.navy}" opacity="0.2"/>
+    <rect x="60" y="70" width="30" height="80" rx="4" fill="${B.navy}" opacity="0.4"/>
+    <rect x="100" y="40" width="30" height="110" rx="4" fill="${B.coral}" opacity="0.8"/>
+    <rect x="140" y="20" width="30" height="130" rx="4" fill="${B.navy}"/>
+    <path d="M35 95 L75 65 L115 35 L155 15" stroke="${B.coral}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="155" cy="15" r="5" fill="${B.coral}"/>
+  </svg>`;
+}
+
+function svgGrowth(): string {
+  return `<svg width="200" height="160" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 140 Q60 120 80 100 Q100 80 120 50 Q140 20 180 10" stroke="${B.coral}" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <polygon points="175,2 188,12 172,16" fill="${B.coral}"/>
+    <circle cx="80" cy="100" r="6" fill="${B.navy}" opacity="0.3"/>
+    <circle cx="120" cy="50" r="6" fill="${B.navy}" opacity="0.5"/>
+    <circle cx="180" cy="10" r="8" fill="${B.coral}"/>
+    <rect x="20" y="145" width="168" height="2" rx="1" fill="${B.navy}" opacity="0.15"/>
+  </svg>`;
+}
+
+function svgProcess(): string {
+  return `<svg width="220" height="100" viewBox="0 0 220 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="25" width="55" height="50" rx="12" fill="${B.navy}"/>
+    <text x="27" y="55" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Inter">Step 1</text>
+    <path d="M60 50 L80 50" stroke="${B.coral}" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <rect x="82" y="25" width="55" height="50" rx="12" fill="${B.coral}" opacity="0.85"/>
+    <text x="109" y="55" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Inter">Step 2</text>
+    <path d="M142 50 L162 50" stroke="${B.coral}" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <rect x="164" y="25" width="55" height="50" rx="12" fill="${B.navy}" opacity="0.7"/>
+    <text x="191" y="55" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Inter">Step 3</text>
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${B.coral}"/></marker></defs>
+  </svg>`;
+}
+
+function svgBrain(): string {
+  return `<svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="90" cy="70" rx="55" ry="50" fill="${B.navy}" opacity="0.1"/>
+    <path d="M60 50 Q65 30 90 25 Q115 30 120 50" stroke="${B.navy}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M55 65 Q50 50 60 40" stroke="${B.navy}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M125 65 Q130 50 120 40" stroke="${B.navy}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M65 80 Q60 95 70 105" stroke="${B.navy}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M115 80 Q120 95 110 105" stroke="${B.navy}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <line x1="90" y1="25" x2="90" y2="110" stroke="${B.navy}" stroke-width="1.5" opacity="0.3"/>
+    <circle cx="90" cy="55" r="4" fill="${B.coral}"/>
+    <circle cx="75" cy="70" r="3" fill="${B.coral}" opacity="0.6"/>
+    <circle cx="105" cy="75" r="3" fill="${B.coral}" opacity="0.6"/>
+    <circle cx="90" cy="90" r="3.5" fill="${B.coral}" opacity="0.8"/>
+  </svg>`;
+}
+
+function svgClock(): string {
+  return `<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="80" cy="80" r="60" fill="${B.navy}" opacity="0.08"/>
+    <circle cx="80" cy="80" r="50" stroke="${B.navy}" stroke-width="3" fill="white"/>
+    <line x1="80" y1="80" x2="80" y2="45" stroke="${B.navy}" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="80" y1="80" x2="105" y2="80" stroke="${B.coral}" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="80" cy="80" r="5" fill="${B.navy}"/>
+    ${[0,30,60,90,120,150,180,210,240,270,300,330].map(deg => {
+      const rad = deg * Math.PI / 180;
+      const x = 80 + 43 * Math.sin(rad);
+      const y = 80 - 43 * Math.cos(rad);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${deg % 90 === 0 ? 3 : 1.5}" fill="${B.navy}" opacity="0.4"/>`;
+    }).join('')}
+  </svg>`;
+}
+
+function svgNetwork(): string {
+  return `<svg width="200" height="160" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <line x1="100" y1="50" x2="45" y2="100" stroke="${B.navy}" stroke-width="1.5" opacity="0.25"/>
+    <line x1="100" y1="50" x2="155" y2="100" stroke="${B.navy}" stroke-width="1.5" opacity="0.25"/>
+    <line x1="100" y1="50" x2="100" y2="130" stroke="${B.navy}" stroke-width="1.5" opacity="0.25"/>
+    <line x1="45" y1="100" x2="100" y2="130" stroke="${B.navy}" stroke-width="1.5" opacity="0.15"/>
+    <line x1="155" y1="100" x2="100" y2="130" stroke="${B.navy}" stroke-width="1.5" opacity="0.15"/>
+    <circle cx="100" cy="50" r="20" fill="${B.navy}"/>
+    <circle cx="45" cy="100" r="16" fill="${B.coral}" opacity="0.85"/>
+    <circle cx="155" cy="100" r="16" fill="${B.coral}" opacity="0.85"/>
+    <circle cx="100" cy="130" r="14" fill="${B.navy}" opacity="0.6"/>
+  </svg>`;
+}
+
+function svgTarget(): string {
+  return `<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="80" cy="80" r="55" fill="${B.coral}" opacity="0.08"/>
+    <circle cx="80" cy="80" r="55" stroke="${B.coral}" stroke-width="2.5" fill="none" opacity="0.3"/>
+    <circle cx="80" cy="80" r="38" stroke="${B.coral}" stroke-width="2.5" fill="none" opacity="0.5"/>
+    <circle cx="80" cy="80" r="20" fill="${B.coral}" opacity="0.15"/>
+    <circle cx="80" cy="80" r="8" fill="${B.coral}"/>
+    <line x1="105" y1="55" x2="82" y2="78" stroke="${B.navy}" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="108,48 112,62 98,58" fill="${B.navy}"/>
+  </svg>`;
+}
+
+function svgMoney(): string {
+  return `<svg width="180" height="140" viewBox="0 0 180 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="20" y="30" width="140" height="80" rx="12" fill="${B.navy}" opacity="0.08"/>
+    <rect x="25" y="35" width="130" height="70" rx="10" stroke="${B.navy}" stroke-width="2" fill="white"/>
+    <circle cx="90" cy="70" r="22" stroke="${B.coral}" stroke-width="2.5" fill="${B.coralLight}"/>
+    <text x="90" y="78" text-anchor="middle" fill="${B.coral}" font-size="22" font-weight="700" font-family="Inter">₹</text>
+    <line x1="35" y1="50" x2="55" y2="50" stroke="${B.navy}" stroke-width="1.5" opacity="0.3"/>
+    <line x1="125" y1="90" x2="145" y2="90" stroke="${B.navy}" stroke-width="1.5" opacity="0.3"/>
+  </svg>`;
+}
+
+function svgProblem(): string {
+  return `<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="80" cy="70" r="45" fill="${B.coral}" opacity="0.08"/>
+    <text x="80" y="82" text-anchor="middle" fill="${B.coral}" font-size="52" font-weight="700" font-family="Inter">?</text>
+    <circle cx="40" cy="120" r="3" fill="${B.navy}" opacity="0.2"/>
+    <circle cx="55" cy="130" r="2" fill="${B.navy}" opacity="0.15"/>
+    <circle cx="120" cy="115" r="3" fill="${B.coral}" opacity="0.2"/>
+    <circle cx="135" cy="128" r="2" fill="${B.coral}" opacity="0.15"/>
+  </svg>`;
+}
+
+function svgLightbulb(): string {
+  return `<svg width="140" height="170" viewBox="0 0 140 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="70" cy="65" r="40" fill="${B.coral}" opacity="0.1"/>
+    <path d="M50 65 Q50 30 70 25 Q90 30 90 65 Q90 85 80 95 L60 95 Q50 85 50 65Z" fill="${B.coral}" opacity="0.2" stroke="${B.coral}" stroke-width="2.5"/>
+    <rect x="58" y="100" width="24" height="10" rx="3" fill="${B.navy}" opacity="0.6"/>
+    <rect x="62" y="114" width="16" height="6" rx="3" fill="${B.navy}" opacity="0.4"/>
+    <line x1="70" y1="5" x2="70" y2="15" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="30" y1="35" x2="38" y2="42" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="110" y1="35" x2="102" y2="42" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="20" y1="65" x2="30" y2="65" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="120" y1="65" x2="110" y2="65" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function svgRocket(): string {
+  return `<svg width="160" height="170" viewBox="0 0 160 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M80 20 Q95 50 95 90 L80 110 L65 90 Q65 50 80 20Z" fill="${B.navy}"/>
+    <circle cx="80" cy="60" r="8" fill="${B.white}"/>
+    <circle cx="80" cy="60" r="4" fill="${B.coral}"/>
+    <path d="M65 80 L50 95 L65 90Z" fill="${B.coral}" opacity="0.8"/>
+    <path d="M95 80 L110 95 L95 90Z" fill="${B.coral}" opacity="0.8"/>
+    <path d="M72 110 L80 140 L88 110Z" fill="${B.coral}" opacity="0.6"/>
+    <circle cx="80" cy="150" r="4" fill="${B.coral}" opacity="0.3"/>
+    <circle cx="72" cy="155" r="2" fill="${B.coral}" opacity="0.2"/>
+    <circle cx="88" cy="155" r="2" fill="${B.coral}" opacity="0.2"/>
+  </svg>`;
+}
+
+function svgPuzzle(): string {
+  return `<svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="20" y="20" width="60" height="60" rx="8" fill="${B.navy}" opacity="0.8"/>
+    <rect x="100" y="20" width="60" height="60" rx="8" fill="${B.coral}" opacity="0.8"/>
+    <rect x="20" y="80" width="60" height="60" rx="8" fill="${B.coral}" opacity="0.5"/>
+    <rect x="100" y="80" width="60" height="60" rx="8" fill="${B.navy}" opacity="0.5"/>
+    <circle cx="90" cy="50" r="10" fill="${B.pageBg}"/>
+    <circle cx="90" cy="50" r="10" fill="${B.navy}" opacity="0.4"/>
+    <circle cx="50" cy="80" r="10" fill="${B.pageBg}"/>
+    <circle cx="50" cy="80" r="10" fill="${B.coral}" opacity="0.4"/>
+  </svg>`;
+}
+
+function svgMegaphone(): string {
+  return `<svg width="180" height="150" viewBox="0 0 180 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M40 55 L120 25 L120 105 L40 75Z" fill="${B.navy}" opacity="0.85"/>
+    <rect x="20" y="50" width="25" height="30" rx="5" fill="${B.coral}"/>
+    <rect x="38" y="80" width="12" height="30" rx="3" fill="${B.navy}" opacity="0.4"/>
+    <circle cx="135" cy="40" r="4" fill="${B.coral}" opacity="0.6"/>
+    <circle cx="148" cy="55" r="3" fill="${B.coral}" opacity="0.4"/>
+    <circle cx="140" cy="70" r="3.5" fill="${B.coral}" opacity="0.5"/>
+    <line x1="128" y1="30" x2="145" y2="22" stroke="${B.coral}" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+    <line x1="128" y1="65" x2="150" y2="65" stroke="${B.coral}" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+    <line x1="128" y1="95" x2="142" y2="102" stroke="${B.coral}" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  </svg>`;
+}
+
+function svgShield(): string {
+  return `<svg width="150" height="170" viewBox="0 0 150 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M75 15 L130 40 L130 85 Q130 130 75 155 Q20 130 20 85 L20 40Z" fill="${B.navy}" opacity="0.1" stroke="${B.navy}" stroke-width="2.5"/>
+    <path d="M55 80 L70 95 L100 60" stroke="${B.coral}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
 }
 
 /* ─────────────────────────────────────────────
-   Helper: draw decorative geometric elements
+   Dot row HTML
    ───────────────────────────────────────────── */
-function drawDecoCircles(
-  doc: InstanceType<typeof PDFDocument>,
-  variant: number
-) {
-  doc.save();
-  doc.opacity(0.06);
+function dotsHtml(slideNum: number, total: number): string {
+  return `<div class="dot-row">${
+    Array.from({ length: total }, (_, i) =>
+      `<div class="dot ${i === slideNum - 1 ? 'active' : ''}"></div>`
+    ).join('')
+  }</div>`;
+}
 
-  if (variant % 3 === 0) {
-    // Large circle top-right
-    doc.circle(PAGE + 40, -40, 200).fill(C.coral);
-    // Small circle bottom-left
-    doc.circle(-20, PAGE + 20, 80).fill(C.indigoLight);
-  } else if (variant % 3 === 1) {
-    // Ring top-left
-    doc.circle(-60, -60, 160).lineWidth(30).strokeColor(C.indigoLight).stroke();
-    // Dot cluster bottom-right
-    doc.circle(PAGE - 60, PAGE - 80, 40).fill(C.coral);
-    doc.circle(PAGE - 20, PAGE - 40, 20).fill(C.coralSoft);
-  } else {
-    // Diagonal stripe
-    doc.save();
-    doc.moveTo(PAGE - 180, 0).lineTo(PAGE, 0).lineTo(PAGE, 180).closePath().fill(C.indigo);
-    doc.restore();
-    // Bottom-left arc
-    doc.circle(0, PAGE, 120).fill(C.indigoLight);
+/* ═══════════════════════════════════════════════════
+   SLIDE TEMPLATES
+   ═══════════════════════════════════════════════════ */
+
+function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+  const lines = escapeHtml(slide.content).split('\n').filter(l => l.trim());
+  const headline = lines[0] || escapeHtml(slide.content);
+  const subtitle = lines.length > 1 ? lines.slice(1).join('<br>') : '';
+  const hSize = headline.length <= 50 ? 50 : headline.length <= 80 ? 42 : headline.length <= 120 ? 36 : 30;
+  const illustration = pickIllustration(slide.content, 'hook', slide.slideNumber);
+
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+    .hook-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 36px;
+    }
+    .hook-headline {
+      font-size: ${hSize}px;
+      line-height: 1.15;
+      color: ${B.headBlack};
+      letter-spacing: -0.5px;
+      max-width: 820px;
+    }
+    .hook-subtitle {
+      font-size: 20px;
+      color: ${B.mutedGrey};
+      line-height: 1.6;
+      max-width: 700px;
+    }
+    .hook-content {
+      display: flex;
+      align-items: center;
+      gap: 48px;
+    }
+    .hook-text {
+      flex: 1;
+    }
+    .hook-illust {
+      flex-shrink: 0;
+    }
+    .hook-accent {
+      width: 60px;
+      height: 5px;
+      background: ${B.coral};
+      border-radius: 3px;
+      margin-top: 8px;
+    }
+  </style></head><body>
+    <div class="slide">
+      <div class="top-bar">
+        <div class="slide-pill">${slide.slideNumber} / ${total}</div>
+        <span class="brand-tag">${escapeHtml(title.toUpperCase())}</span>
+      </div>
+      <div class="hook-main">
+        <div class="hook-content">
+          <div class="hook-text">
+            <h1 class="hook-headline serif">${headline}</h1>
+            ${subtitle ? `<p class="hook-subtitle">${subtitle}</p>` : ''}
+            <div class="hook-accent"></div>
+          </div>
+          <div class="hook-illust">${illustration}</div>
+        </div>
+      </div>
+      <div class="bottom-brand">MerakiPeople.AI</div>
+      ${dotsHtml(slide.slideNumber, total)}
+    </div>
+  </body></html>`;
+}
+
+function contentSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+  const content = escapeHtml(slide.content);
+  const lines = content.split('\n').filter(l => l.trim());
+  const hasHeadline = lines.length > 1 && lines[0].length < 100;
+  const headline = hasHeadline ? lines[0] : '';
+  const body = hasHeadline ? lines.slice(1).join('<br><br>') : content;
+  const headSize = headline.length <= 40 ? 36 : headline.length <= 70 ? 30 : 24;
+  const bodyLen = body.replace(/<br>/g, '').length;
+  const bodySize = bodyLen <= 100 ? 22 : bodyLen <= 200 ? 19 : bodyLen <= 350 ? 17 : 15;
+  const illustration = pickIllustration(slide.content, 'content', slide.slideNumber);
+
+  // Detect if content has bullet-like items (for feature-card layout)
+  const bulletItems = content.split('\n').filter(l => /^[-•\d]/.test(l.trim()));
+  const useFeatureLayout = bulletItems.length >= 3 && bulletItems.length <= 4;
+
+  if (useFeatureLayout) {
+    return featureSlideHtml(slide, total, title, headline, bulletItems);
   }
 
-  doc.restore();
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+    .content-body-area {
+      flex: 1;
+      display: flex;
+      gap: 40px;
+      align-items: center;
+    }
+    .content-card-main {
+      flex: 1;
+      background: ${B.cardBg};
+      border-radius: 20px;
+      padding: 48px 52px;
+      box-shadow: 0 2px 24px rgba(0,0,0,0.04);
+      position: relative;
+    }
+    .content-card-main::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 28px;
+      bottom: 28px;
+      width: 5px;
+      background: ${B.coral};
+      border-radius: 0 3px 3px 0;
+    }
+    .content-head {
+      font-size: ${headSize}px;
+      color: ${B.headBlack};
+      line-height: 1.25;
+      margin-bottom: 20px;
+    }
+    .content-text {
+      font-size: ${bodySize}px;
+      color: ${B.bodyGrey};
+      line-height: 1.75;
+    }
+    .content-text strong, .content-text b {
+      font-weight: 600;
+      color: ${B.headBlack};
+    }
+    .content-illust {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .slide-num-watermark {
+      position: absolute;
+      top: 20px;
+      right: 32px;
+      font-size: 80px;
+      font-weight: 800;
+      color: ${B.navy};
+      opacity: 0.04;
+      line-height: 1;
+    }
+  </style></head><body>
+    <div class="slide">
+      <div class="top-bar">
+        <div class="slide-pill">${slide.slideNumber} / ${total}</div>
+        <span class="brand-tag">${escapeHtml(title.toUpperCase())}</span>
+      </div>
+      <div class="content-body-area">
+        <div class="content-card-main">
+          <div class="slide-num-watermark">${String(slide.slideNumber).padStart(2, '0')}</div>
+          ${headline ? `<h2 class="content-head serif">${headline}</h2>` : ''}
+          <div class="content-text">${formatBody(body)}</div>
+        </div>
+        <div class="content-illust">${illustration}</div>
+      </div>
+      <div class="bottom-brand">MerakiPeople.AI</div>
+      ${dotsHtml(slide.slideNumber, total)}
+    </div>
+  </body></html>`;
+}
+
+/** Feature-card layout for slides with 3-4 bullet points */
+function featureSlideHtml(slide: CarouselSlideInput, total: number, title: string, headline: string, items: string[]): string {
+  const icons = ['💡', '⚡', '🎯', '🔑'];
+  const bgColors = [B.coralLight, B.navyTint, B.tealLight, B.coralLight];
+
+  const cards = items.map((item, i) => {
+    const clean = item.replace(/^[-•\d.)\s]+/, '').trim();
+    return `<div class="feature-card">
+      <div class="feature-icon" style="background:${bgColors[i % bgColors.length]}">${icons[i % icons.length]}</div>
+      <div class="feature-desc" style="font-size:16px;color:${B.bodyGrey};font-weight:500">${escapeHtml(clean)}</div>
+    </div>`;
+  }).join('');
+
+  const headSize = headline.length <= 50 ? 36 : 28;
+
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+    .feat-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 32px;
+    }
+    .feat-headline {
+      font-size: ${headSize}px;
+      color: ${B.headBlack};
+      line-height: 1.2;
+      text-align: center;
+    }
+    .feat-sub {
+      font-size: 18px;
+      color: ${B.mutedGrey};
+      text-align: center;
+      max-width: 700px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+  </style></head><body>
+    <div class="slide">
+      <div class="top-bar">
+        <div class="slide-pill">${slide.slideNumber} / ${total}</div>
+        <span class="brand-tag">${escapeHtml(title.toUpperCase())}</span>
+      </div>
+      <div class="feat-body">
+        ${headline ? `<h2 class="feat-headline serif">${headline}</h2>` : ''}
+        <div class="feature-row">${cards}</div>
+      </div>
+      <div class="bottom-brand">MerakiPeople.AI</div>
+      ${dotsHtml(slide.slideNumber, total)}
+    </div>
+  </body></html>`;
+}
+
+function ctaSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+  const content = escapeHtml(slide.content);
+  const lines = content.split('\n').filter(l => l.trim());
+  const headline = lines[0] || content;
+  const subtitle = lines.length > 1 ? lines.slice(1).join('<br>') : '';
+  const hSize = headline.length <= 60 ? 44 : headline.length <= 100 ? 36 : 28;
+
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+    .cta-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 28px;
+    }
+    .cta-headline {
+      font-size: ${hSize}px;
+      color: ${B.headBlack};
+      line-height: 1.2;
+      max-width: 800px;
+    }
+    .cta-sub {
+      font-size: 19px;
+      color: ${B.mutedGrey};
+      line-height: 1.6;
+      max-width: 650px;
+    }
+    .cta-divider {
+      width: 50px;
+      height: 4px;
+      background: ${B.coral};
+      border-radius: 2px;
+    }
+    .cta-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 44px;
+      background: ${B.coral};
+      border-radius: 50px;
+      color: white;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      box-shadow: 0 6px 24px rgba(255,111,97,0.3);
+    }
+    .cta-url {
+      margin-top: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: ${B.navy};
+      opacity: 0.6;
+    }
+  </style></head><body>
+    <div class="slide">
+      <div class="top-bar">
+        <div class="slide-pill">${slide.slideNumber} / ${total}</div>
+        <span class="brand-tag">${escapeHtml(title.toUpperCase())}</span>
+      </div>
+      <div class="cta-body">
+        <h1 class="cta-headline serif">${headline}</h1>
+        ${subtitle ? `<p class="cta-sub">${subtitle}</p>` : ''}
+        <div class="cta-divider"></div>
+        <div class="cta-button">Follow for more →</div>
+        <div class="cta-url">merakipeople.ai</div>
+      </div>
+      <div class="bottom-brand">MerakiPeople.AI</div>
+      ${dotsHtml(slide.slideNumber, total)}
+    </div>
+  </body></html>`;
 }
 
 /* ─────────────────────────────────────────────
-   Helper: draw the accent bar + slide badge
+   Text Helpers
    ───────────────────────────────────────────── */
-function drawSlideHeader(
-  doc: InstanceType<typeof PDFDocument>,
-  slideNum: number,
-  totalSlides: number,
-  slideType: string,
-  deckTitle: string,
-  useLightTheme: boolean
-) {
-  const textColor = useLightTheme ? C.slate900 : C.white;
-  const mutedColor = useLightTheme ? C.white40 : C.white60;
 
-  // Top accent gradient bar
-  const grad = doc.linearGradient(0, 0, PAGE, 0);
-  grad.stop(0, C.coral).stop(1, C.indigo);
-  doc.rect(0, 0, PAGE, 5).fill(grad);
-
-  // Slide number pill
-  const pillX = 40;
-  const pillY = 24;
-  const pillW = 44;
-  const pillH = 26;
-  doc.save();
-  roundedRect(doc, pillX, pillY, pillW, pillH, 13);
-  doc.fill(C.coral);
-  doc.restore();
-
-  doc.font('Helvetica-Bold').fontSize(11).fill(C.white);
-  doc.text(`${slideNum}`, pillX, pillY + 7, { width: pillW, align: 'center' });
-
-  // Type label next to pill
-  const typeLabel = slideType === 'hook' ? 'HOOK' : slideType === 'cta' ? 'CTA' : 'INSIGHT';
-  doc.font('Helvetica-Bold').fontSize(8).fill(mutedColor);
-  doc.text(typeLabel, pillX + pillW + 10, pillY + 9);
-
-  // Deck title — right aligned
-  doc.font('Helvetica').fontSize(8).fill(mutedColor);
-  doc.text(deckTitle.toUpperCase(), PAGE - 250, pillY + 9, { width: 210, align: 'right' });
+function escapeHtml(s: string): string {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/* ─────────────────────────────────────────────
-   Helper: draw footer
-   ───────────────────────────────────────────── */
-function drawFooter(
-  doc: InstanceType<typeof PDFDocument>,
-  slideNum: number,
-  totalSlides: number,
-  useLightTheme: boolean
-) {
-  const y = PAGE - 36;
-  const mutedColor = useLightTheme ? C.white40 : C.white40;
-
-  // Thin separator line
-  doc.save();
-  doc.opacity(0.15);
-  doc.moveTo(40, y - 8).lineTo(PAGE - 40, y - 8)
-    .lineWidth(0.5).strokeColor(useLightTheme ? C.slate200 : C.white).stroke();
-  doc.restore();
-
-  // Page indicator dots
-  const dotY = y + 4;
-  const dotSpacing = 14;
-  const totalWidth = (totalSlides - 1) * dotSpacing;
-  const startX = (PAGE - totalWidth) / 2;
-
-  for (let i = 0; i < totalSlides; i++) {
-    const isActive = i === slideNum - 1;
-    doc.circle(startX + i * dotSpacing, dotY, isActive ? 4 : 2.5)
-      .fill(isActive ? C.coral : mutedColor);
-  }
-
-  // Branding
-  doc.font('Helvetica').fontSize(7).fill(mutedColor);
-  doc.text('The Signal', 40, y, { width: 100 });
-  doc.text('MerakiPeople', PAGE - 140, y, { width: 100, align: 'right' });
+function formatBody(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^[-\u2022]\s*/gm, `<span style="color:${B.coral};margin-right:8px;">●</span> `)
+    .replace(/^\d+\.\s*/gm, (m) => `<span style="color:${B.coral};font-weight:700;margin-right:8px;">${m.trim()}</span> `);
 }
 
-/* ─────────────────────────────────────────────
-   Helper: smart text sizing
-   ───────────────────────────────────────────── */
-function getContentFontSize(text: string, isHero: boolean): number {
-  const len = text.length;
-  if (isHero) {
-    if (len <= 40) return 42;
-    if (len <= 80) return 36;
-    if (len <= 120) return 30;
-    if (len <= 180) return 26;
-    return 22;
-  }
-  if (len <= 60) return 30;
-  if (len <= 120) return 24;
-  if (len <= 200) return 20;
-  if (len <= 300) return 17;
-  return 15;
-}
+/* ═══════════════════════════════════════════════════
+   MAIN: Generate carousel PDF via Puppeteer
+   ═══════════════════════════════════════════════════ */
 
-/* ═════════════════════════════════════════════
-   SLIDE RENDERERS — one per slide type
-   ═════════════════════════════════════════════ */
-
-/**
- * HOOK slide: Dark background, big bold text, coral accent
- * Inspired by premium deck cover slides
- */
-function renderHookSlide(
-  doc: InstanceType<typeof PDFDocument>,
-  slide: CarouselSlideInput,
-  totalSlides: number,
-  title: string
-) {
-  // Deep dark gradient background
-  const bgGrad = doc.linearGradient(0, 0, PAGE * 0.3, PAGE);
-  bgGrad.stop(0, C.navy).stop(1, C.navyMid);
-  doc.rect(0, 0, PAGE, PAGE).fill(bgGrad);
-
-  // Decorative elements
-  drawDecoCircles(doc, slide.slideNumber);
-
-  // Large coral accent shape — bottom-left geometric
-  doc.save();
-  doc.opacity(0.12);
-  doc.moveTo(0, PAGE * 0.65).lineTo(0, PAGE).lineTo(PAGE * 0.35, PAGE).closePath().fill(C.coral);
-  doc.restore();
-
-  // Vertical coral accent line on left
-  doc.rect(40, 80, 4, PAGE - 160).fill(C.coral);
-
-  // Header
-  drawSlideHeader(doc, slide.slideNumber, totalSlides, 'hook', title, false);
-
-  // Main hook text — large, bold, white
-  const fontSize = getContentFontSize(slide.content, true);
-  const textX = 60;
-  const textW = PAGE - 120;
-  const textY = PAGE * 0.22;
-
-  doc.font('Helvetica-Bold').fontSize(fontSize).fill(C.white);
-  doc.text(slide.content, textX, textY, {
-    width: textW,
-    lineGap: fontSize * 0.4,
-    paragraphGap: fontSize * 0.3,
-  });
-
-  // Swipe prompt at bottom
-  doc.save();
-  doc.font('Helvetica').fontSize(10).fill(C.white60);
-  doc.text('Swipe to learn more  \u2192', 0, PAGE - 60, { width: PAGE, align: 'center' });
-  doc.restore();
-
-  // Footer
-  drawFooter(doc, slide.slideNumber, totalSlides, false);
-}
-
-/**
- * CONTENT slide: Clean light or dark alternating, structured layout
- */
-function renderContentSlide(
-  doc: InstanceType<typeof PDFDocument>,
-  slide: CarouselSlideInput,
-  totalSlides: number,
-  title: string
-) {
-  const useDark = slide.slideNumber % 2 === 0;
-
-  if (useDark) {
-    // Dark variant
-    const bgGrad = doc.linearGradient(0, 0, 0, PAGE);
-    bgGrad.stop(0, C.navyMid).stop(1, C.navy);
-    doc.rect(0, 0, PAGE, PAGE).fill(bgGrad);
-  } else {
-    // Light variant — soft off-white
-    doc.rect(0, 0, PAGE, PAGE).fill(C.slate50);
-    // Subtle navy side block
-    doc.save();
-    doc.opacity(0.04);
-    doc.rect(0, 0, 8, PAGE).fill(C.navy);
-    doc.restore();
-  }
-
-  const textColor = useDark ? C.white : C.slate900;
-  const mutedColor = useDark ? C.white60 : C.white40;
-
-  // Decorative elements
-  drawDecoCircles(doc, slide.slideNumber);
-
-  // Header
-  drawSlideHeader(doc, slide.slideNumber, totalSlides, 'content', title, !useDark);
-
-  // Content area with accent card
-  const cardX = 40;
-  const cardY = 70;
-  const cardW = PAGE - 80;
-  const cardH = PAGE - 130;
-
-  // Subtle card background
-  doc.save();
-  doc.opacity(useDark ? 0.08 : 0.5);
-  doc.roundedRect(cardX, cardY, cardW, cardH, 16)
-    .fill(useDark ? C.white : C.white);
-  doc.restore();
-
-  // Left accent bar on card
-  doc.roundedRect(cardX, cardY + 20, 4, cardH - 40, 2).fill(C.indigo);
-
-  // Split content if it has line breaks or is long
-  const contentLines = slide.content.split('\n').filter(l => l.trim());
-  const hasMultipleParagraphs = contentLines.length > 1;
-
-  if (hasMultipleParagraphs && contentLines[0].length < 80) {
-    // First line as a headline
-    const headSize = getContentFontSize(contentLines[0], true);
-    doc.font('Helvetica-Bold').fontSize(Math.min(headSize, 28)).fill(textColor);
-    doc.text(contentLines[0], cardX + 24, cardY + 36, {
-      width: cardW - 48,
-      lineGap: 8,
-    });
-
-    // Remaining lines as body
-    const bodyText = contentLines.slice(1).join('\n');
-    const bodySize = getContentFontSize(bodyText, false);
-    doc.font('Helvetica').fontSize(Math.min(bodySize, 18)).fill(useDark ? C.white90 : C.slate700);
-    doc.text(bodyText, cardX + 24, cardY + 36 + Math.min(headSize, 28) + 30, {
-      width: cardW - 48,
-      lineGap: 10,
-      paragraphGap: 14,
-    });
-  } else {
-    // Single block of text — centered vertically
-    const fontSize = getContentFontSize(slide.content, false);
-    const estimatedHeight = Math.ceil(slide.content.length / ((cardW - 48) / (fontSize * 0.5))) * (fontSize + 10);
-    const textY = Math.max(cardY + 36, cardY + (cardH - estimatedHeight) / 2 - 10);
-
-    doc.font('Helvetica-Bold').fontSize(fontSize).fill(textColor);
-    doc.text(slide.content, cardX + 24, textY, {
-      width: cardW - 48,
-      lineGap: fontSize * 0.45,
-      paragraphGap: fontSize * 0.3,
-    });
-  }
-
-  // Footer
-  drawFooter(doc, slide.slideNumber, totalSlides, !useDark);
-}
-
-/**
- * CTA slide: Bold, coral-accented, action-oriented
- */
-function renderCtaSlide(
-  doc: InstanceType<typeof PDFDocument>,
-  slide: CarouselSlideInput,
-  totalSlides: number,
-  title: string
-) {
-  // Dark background with coral energy
-  const bgGrad = doc.linearGradient(0, 0, PAGE, PAGE);
-  bgGrad.stop(0, C.navy).stop(1, '#1a1145');
-  doc.rect(0, 0, PAGE, PAGE).fill(bgGrad);
-
-  // Large coral gradient circle — center-right
-  doc.save();
-  doc.opacity(0.1);
-  doc.circle(PAGE * 0.7, PAGE * 0.5, 220).fill(C.coral);
-  doc.restore();
-
-  doc.save();
-  doc.opacity(0.06);
-  doc.circle(PAGE * 0.3, PAGE * 0.8, 140).fill(C.indigoLight);
-  doc.restore();
-
-  // Header
-  drawSlideHeader(doc, slide.slideNumber, totalSlides, 'cta', title, false);
-
-  // CTA content — centered, bold
-  const fontSize = getContentFontSize(slide.content, true);
-  const textW = PAGE - 100;
-  const textX = 50;
-
-  // Estimate text height for vertical centering
-  const charsPerLine = Math.floor(textW / (fontSize * 0.5));
-  const numLines = Math.ceil(slide.content.length / charsPerLine);
-  const textHeight = numLines * (fontSize + fontSize * 0.4);
-  const textY = Math.max(80, (PAGE - textHeight) / 2 - 30);
-
-  doc.font('Helvetica-Bold').fontSize(fontSize).fill(C.white);
-  doc.text(slide.content, textX, textY, {
-    width: textW,
-    align: 'center',
-    lineGap: fontSize * 0.4,
-  });
-
-  // CTA button-style element
-  const btnW = 220;
-  const btnH = 48;
-  const btnX = (PAGE - btnW) / 2;
-  const btnY = textY + textHeight + 40;
-
-  if (btnY < PAGE - 70) {
-    // Coral gradient button
-    const btnGrad = doc.linearGradient(btnX, btnY, btnX + btnW, btnY);
-    btnGrad.stop(0, C.coral).stop(1, C.coralGlow);
-
-    doc.save();
-    doc.roundedRect(btnX, btnY, btnW, btnH, 24).fill(btnGrad);
-    doc.restore();
-
-    doc.font('Helvetica-Bold').fontSize(14).fill(C.white);
-    doc.text('Follow for more \u2192', btnX, btnY + 16, { width: btnW, align: 'center' });
-  }
-
-  // Engagement icons row
-  const iconsY = PAGE - 70;
-  doc.save();
-  doc.font('Helvetica').fontSize(20).fill(C.white60);
-  doc.text('\u2764  \uD83D\uDCAC  \u2B06', 0, iconsY, { width: PAGE, align: 'center' });
-  doc.restore();
-
-  // Footer
-  drawFooter(doc, slide.slideNumber, totalSlides, false);
-}
-
-/* ═════════════════════════════════════════════
-   AI Image-based carousel (fal.ai Nano Banana Pro)
-   ═════════════════════════════════════════════ */
-
-/**
- * Build a prompt for an AI-generated BACKGROUND image (no text).
- * Text will be overlaid programmatically by PDFKit for pixel-perfect rendering.
- */
-function buildBackgroundPrompt(
-  slide: CarouselSlideInput,
-  totalSlides: number,
-  title: string
-): string {
-  let mood = '';
-  if (slide.type === 'hook') {
-    mood = 'Bold, dramatic, high-contrast. Dark navy/indigo background with subtle coral and orange gradient accents. Abstract geometric shapes — angular lines, overlapping translucent rectangles. Conveys urgency and disruption.';
-  } else if (slide.type === 'cta') {
-    mood = 'Warm, inviting, energetic. Rich coral/orange gradient flowing into deep navy. Soft glowing circular shapes. Conveys action and connection. Bottom area slightly darker for button placement.';
-  } else if (slide.slideNumber % 2 === 0) {
-    mood = 'Clean, professional, light. Soft off-white/light grey background with subtle navy geometric accents — thin lines, dots, or minimal shapes on edges. Spacious and airy feel. Large open center area.';
-  } else {
-    mood = 'Sophisticated, deep. Dark navy/indigo background with subtle lighter indigo geometric patterns — thin grid lines, abstract nodes, or flowing curves. Professional and modern. Large open center area.';
-  }
-
-  return [
-    `Create a 1:1 square abstract background image for a professional LinkedIn carousel slide.`,
-    '',
-    `MOOD & STYLE:`,
-    mood,
-    '',
-    `REQUIREMENTS:`,
-    `- This is ONLY a background — DO NOT include any text, words, letters, numbers, or typography`,
-    `- DO NOT write any words on the image at all`,
-    `- Keep the center area relatively clean and open (text will be overlaid later)`,
-    `- Use colour palette: deep navy (#1E1B4B), coral (#FF6B6B), white, subtle indigo (#4338CA)`,
-    `- Abstract, geometric, minimal — like a premium consulting firm's slide deck`,
-    `- No photos, no people, no icons, no logos — pure abstract visual design`,
-    `- High quality, smooth gradients, professional feel`,
-    `- Topic context: ${title}`,
-  ].join('\n');
-}
-
-/**
- * Generates a carousel as AI-generated 1:1 images (via Nano Banana Pro on fal.ai),
- * then combines them into a multi-page PDF.
- */
 export async function generateCarouselPdf(
   slides: CarouselSlideInput[],
   postId: string,
@@ -490,304 +783,109 @@ export async function generateCarouselPdf(
     throw new Error('No carousel slides provided');
   }
 
-  // Determine which image provider to use: Gemini (preferred) → fal.ai → text fallback
-  const useGemini = isGeminiImageAvailable();
-  const useFal = !useGemini && isImageGenerationAvailable();
+  console.log(`[carouselPdf] Generating ${slides.length}-slide carousel via Puppeteer...`);
 
-  if (!useGemini && !useFal) {
-    console.warn('[carouselPdf] No image API available (GEMINI_API_KEY / FAL_KEY not set), falling back to text PDF');
-    return generateTextCarouselPdf(slides, postId, title, author);
-  }
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
 
-  const provider = useGemini ? 'Gemini' : 'fal.ai Nano Banana Pro';
-  console.log(`[carouselPdf] Generating ${slides.length} background images via ${provider}...`);
-
-  // Generate AI backgrounds for each slide
-  const bgBuffers: (Buffer | null)[] = [];
   const slideImageUrls: string[] = [];
+  const slideBuffers: Buffer[] = [];
 
-  for (let i = 0; i < slides.length; i++) {
-    const slide = slides[i];
-    const prompt = buildBackgroundPrompt(slide, slides.length, title);
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: S, height: S, deviceScaleFactor: 2 });
 
-    try {
-      let buffer: Buffer;
-      let url = '';
+    // Pre-load Google Fonts once on a blank page
+    await page.setContent(`<!DOCTYPE html><html><head>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    </head><body><p style="font-family:'DM Serif Display'">.</p><p style="font-family:'Inter'">.</p></body></html>`, {
+      waitUntil: 'networkidle2',
+      timeout: 10000,
+    }).catch(() => console.warn('[carouselPdf] Font preload timed out, using fallbacks'));
 
-      if (useGemini) {
-        const result = await generateImageWithGemini(prompt);
-        buffer = result.buffer;
-        const tmpDir = path.join(os.tmpdir(), 'signal-carousels', postId);
-        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const slidePath = path.join(tmpDir, `bg-${slide.slideNumber}.jpg`);
-        fs.writeFileSync(slidePath, buffer);
-        url = slidePath;
-      } else {
-        const result = await generateImage(prompt, '1:1', '1K', 1);
-        url = result.imageUrls[0];
-        buffer = await fetchImageBuffer(url);
+    // Wait for fonts to be ready (with timeout)
+    await Promise.race([
+      page.evaluate(() => document.fonts.ready),
+      new Promise(r => setTimeout(r, 5000)),
+    ]);
+    console.log('[carouselPdf] Fonts loaded, rendering slides...');
+
+    for (const slide of slides) {
+      let html: string;
+      switch (slide.type) {
+        case 'hook':  html = hookSlideHtml(slide, slides.length, title); break;
+        case 'cta':   html = ctaSlideHtml(slide, slides.length, title); break;
+        default:      html = contentSlideHtml(slide, slides.length, title); break;
       }
 
-      bgBuffers.push(buffer);
-      slideImageUrls.push(url);
-      console.log(`[carouselPdf] Background ${slide.slideNumber}/${slides.length} generated (${(buffer.length / 1024).toFixed(1)} KB)`);
-    } catch (err: any) {
-      console.warn(`[carouselPdf] Failed to generate background ${slide.slideNumber}: ${err.message}`);
-      bgBuffers.push(null);
+      // Use domcontentloaded — fonts are already cached from preload
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 5000 });
+      // Small delay to let layout settle
+      await new Promise(r => setTimeout(r, 200));
+
+      const screenshot = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: S, height: S } });
+      const buf = Buffer.isBuffer(screenshot) ? screenshot : Buffer.from(screenshot);
+      slideBuffers.push(buf);
+      console.log(`[carouselPdf] Slide ${slide.slideNumber}/${slides.length} rendered (${(buf.length / 1024).toFixed(0)} KB)`);
     }
+  } finally {
+    await browser.close();
   }
 
-  console.log(`[carouselPdf] ${bgBuffers.filter(Boolean).length}/${slides.length} backgrounds generated via ${provider}`);
-
-  // Build PDF: AI background + programmatic text overlay per slide
-  const pageSize = PAGE;
+  // Assemble into PDF
   const doc = new PDFDocument({
-    size: [pageSize, pageSize],
+    size: [S, S],
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    info: {
-      Title: title,
-      Author: author || 'The Signal',
-      Creator: 'The Signal \u2014 MerakiPeople Growth OS',
-    },
+    info: { Title: title, Author: author || 'MerakiPeople', Creator: 'The Signal — MerakiPeople Growth OS' },
   });
 
   const chunks: Buffer[] = [];
   doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-
   const pdfReady = new Promise<Buffer>((resolve, reject) => {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
   });
 
-  for (let i = 0; i < slides.length; i++) {
+  for (let i = 0; i < slideBuffers.length; i++) {
     if (i > 0) doc.addPage();
-    const slide = slides[i];
-    const bg = bgBuffers[i];
-
-    if (bg) {
-      // Draw AI background
-      doc.image(bg, 0, 0, { width: pageSize, height: pageSize });
-    } else {
-      // Fallback solid background
-      if (slide.type === 'hook' || slide.type === 'cta') {
-        const bgGrad = doc.linearGradient(0, 0, pageSize * 0.3, pageSize);
-        bgGrad.stop(0, C.navy).stop(1, C.navyMid);
-        doc.rect(0, 0, pageSize, pageSize).fill(bgGrad);
-      } else if (slide.slideNumber % 2 === 0) {
-        doc.rect(0, 0, pageSize, pageSize).fill(C.slate50);
-      } else {
-        const bgGrad = doc.linearGradient(0, 0, 0, pageSize);
-        bgGrad.stop(0, C.navyMid).stop(1, C.navy);
-        doc.rect(0, 0, pageSize, pageSize).fill(bgGrad);
-      }
-    }
-
-    // Overlay semi-transparent panel for text readability
-    const isDark = slide.type === 'hook' || slide.type === 'cta' || slide.slideNumber % 2 !== 0;
-    doc.save();
-    doc.opacity(isDark ? 0.7 : 0.75);
-    doc.roundedRect(30, 60, pageSize - 60, pageSize - 110, 16).fill(isDark ? '#0F0D2E' : '#FFFFFF');
-    doc.restore();
-
-    // Top accent gradient bar
-    const grad = doc.linearGradient(0, 0, pageSize, 0);
-    grad.stop(0, C.coral).stop(1, C.indigo);
-    doc.rect(0, 0, pageSize, 5).fill(grad);
-
-    // Slide number pill
-    doc.save();
-    roundedRect(doc, 40, 24, 44, 26, 13);
-    doc.fill(C.coral);
-    doc.restore();
-    doc.font('Helvetica-Bold').fontSize(11).fill(C.white);
-    doc.text(`${slide.slideNumber}`, 40, 31, { width: 44, align: 'center' });
-
-    // Type label
-    const typeLabel = slide.type === 'hook' ? 'HOOK' : slide.type === 'cta' ? 'CTA' : 'INSIGHT';
-    const labelColor = isDark ? C.white60 : C.white40;
-    doc.font('Helvetica-Bold').fontSize(8).fill(labelColor);
-    doc.text(typeLabel, 94, 33);
-
-    // Title — right aligned
-    doc.font('Helvetica').fontSize(8).fill(labelColor);
-    doc.text(title.toUpperCase(), pageSize - 250, 33, { width: 210, align: 'right' });
-
-    // Main content text
-    const textColor = isDark ? C.white : C.slate900;
-    const textX = 54;
-    const textW = pageSize - 108;
-    const isHero = slide.type === 'hook' || slide.type === 'cta';
-    const fontSize = getContentFontSize(slide.content, isHero);
-
-    // Split multi-paragraph content
-    const lines = slide.content.split('\n').filter(l => l.trim());
-    const hasHeadline = lines.length > 1 && lines[0].length < 80;
-
-    if (hasHeadline) {
-      const headSize = Math.min(getContentFontSize(lines[0], true), 30);
-      const headY = 90;
-      doc.font('Helvetica-Bold').fontSize(headSize).fill(textColor);
-      doc.text(lines[0], textX, headY, { width: textW, lineGap: 8 });
-
-      const bodyText = lines.slice(1).join('\n');
-      const bodySize = Math.min(getContentFontSize(bodyText, false), 18);
-      const bodyColor = isDark ? C.white90 : C.slate700;
-      doc.font('Helvetica').fontSize(bodySize).fill(bodyColor);
-      doc.text(bodyText, textX, headY + headSize + 28, {
-        width: textW,
-        lineGap: 10,
-        paragraphGap: 14,
-      });
-    } else {
-      // Center vertically
-      const estLines = Math.ceil(slide.content.length / ((textW) / (fontSize * 0.5)));
-      const estHeight = estLines * (fontSize + fontSize * 0.4);
-      const textY = Math.max(90, (pageSize - estHeight) / 2 - 10);
-
-      doc.font('Helvetica-Bold').fontSize(fontSize).fill(textColor);
-      doc.text(slide.content, textX, textY, {
-        width: textW,
-        align: isHero ? 'center' : 'left',
-        lineGap: fontSize * 0.4,
-        paragraphGap: fontSize * 0.3,
-      });
-    }
-
-    // CTA button for cta slides
-    if (slide.type === 'cta') {
-      const btnW = 220;
-      const btnH = 44;
-      const btnX = (pageSize - btnW) / 2;
-      const btnY = pageSize - 90;
-      const btnGrad = doc.linearGradient(btnX, btnY, btnX + btnW, btnY);
-      btnGrad.stop(0, C.coral).stop(1, C.coralGlow);
-      doc.save();
-      doc.roundedRect(btnX, btnY, btnW, btnH, 22).fill(btnGrad);
-      doc.restore();
-      doc.font('Helvetica-Bold').fontSize(13).fill(C.white);
-      doc.text('Follow for more \u2192', btnX, btnY + 14, { width: btnW, align: 'center' });
-    }
-
-    // Footer
-    drawFooter(doc, slide.slideNumber, slides.length, !isDark);
-
-    // Brand watermark
-    doc.font('Helvetica-Bold').fontSize(7).fill(isDark ? C.white40 : C.white40);
-    doc.text('MerakiPeople', pageSize - 110, pageSize - 36, { width: 80, align: 'right' });
+    doc.image(slideBuffers[i], 0, 0, { width: S, height: S });
   }
 
   doc.end();
   const pdfBuffer = await pdfReady;
+  console.log(`[carouselPdf] PDF assembled: ${slides.length} pages (${(pdfBuffer.length / 1024).toFixed(0)} KB)`);
 
-  console.log(`[carouselPdf] PDF assembled: ${slideImageBuffers.length} pages (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
+  // Save individual slides
+  const tmpDir = path.join(os.tmpdir(), 'signal-carousels', postId);
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  for (let i = 0; i < slideBuffers.length; i++) {
+    fs.writeFileSync(path.join(tmpDir, `slide-${i + 1}.png`), slideBuffers[i]);
+    slideImageUrls.push(`/api/posts/${postId}/carousel-slide/${i + 1}`);
+  }
 
+  // Store PDF
   if (isAzureConfigured()) {
     try {
       const blobName = `posts/${postId}/carousel.pdf`;
       const pdfUrl = await uploadImageToAzure(pdfBuffer, blobName, 'application/pdf');
-      console.log(`[carouselPdf] Uploaded to Azure: ${blobName}`);
-      return { pdfUrl, isPermanent: true, slideCount: slideImageBuffers.length, slideImageUrls };
+      return { pdfUrl, isPermanent: true, slideCount: slides.length, slideImageUrls };
     } catch (azureErr: any) {
-      console.warn(`[carouselPdf] Azure upload failed, falling back to local: ${azureErr.message}`);
+      console.warn(`[carouselPdf] Azure upload failed: ${azureErr.message}`);
     }
   }
 
-  const tmpDir = path.join(os.tmpdir(), 'signal-carousels');
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const tmpPath = path.join(tmpDir, `${postId}.pdf`);
-  fs.writeFileSync(tmpPath, pdfBuffer);
-  console.log(`[carouselPdf] Saved locally: ${tmpPath}`);
-
-  return {
-    pdfUrl: `/api/posts/${postId}/carousel-pdf`,
-    isPermanent: false,
-    slideCount: slideImageBuffers.length,
-    slideImageUrls,
-  };
-}
-
-/* ═════════════════════════════════════════════
-   Premium text-based carousel PDF
-   (fallback when fal.ai is unavailable)
-   ═════════════════════════════════════════════ */
-async function generateTextCarouselPdf(
-  slides: CarouselSlideInput[],
-  postId: string,
-  title: string,
-  author: string
-): Promise<CarouselPdfResult> {
-  const doc = new PDFDocument({
-    size: [PAGE, PAGE],
-    margins: { top: 0, bottom: 0, left: 0, right: 0 },
-    info: {
-      Title: title,
-      Author: author || 'The Signal',
-      Creator: 'The Signal \u2014 MerakiPeople Growth OS',
-    },
-  });
-
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-
-  const pdfReady = new Promise<Buffer>((resolve, reject) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-  });
-
-  for (let i = 0; i < slides.length; i++) {
-    const slide = slides[i];
-    if (i > 0) doc.addPage();
-
-    // Dispatch to the appropriate renderer
-    switch (slide.type) {
-      case 'hook':
-        renderHookSlide(doc, slide, slides.length, title);
-        break;
-      case 'cta':
-        renderCtaSlide(doc, slide, slides.length, title);
-        break;
-      default:
-        renderContentSlide(doc, slide, slides.length, title);
-        break;
-    }
-  }
-
-  doc.end();
-  const pdfBuffer = await pdfReady;
-
-  console.log(`[carouselPdf] Premium text PDF: ${slides.length} slides (${(pdfBuffer.length / 1024).toFixed(1)} KB)`);
-
-  if (isAzureConfigured()) {
-    try {
-      const blobName = `posts/${postId}/carousel.pdf`;
-      const pdfUrl = await uploadImageToAzure(pdfBuffer, blobName, 'application/pdf');
-      return { pdfUrl, isPermanent: true, slideCount: slides.length, slideImageUrls: [] };
-    } catch (azureErr: any) {
-      console.warn(`[carouselPdf] Azure upload failed, falling back to local: ${azureErr.message}`);
-    }
-  }
-
-  const tmpDir = path.join(os.tmpdir(), 'signal-carousels');
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-  const tmpPath = path.join(tmpDir, `${postId}.pdf`);
-  fs.writeFileSync(tmpPath, pdfBuffer);
+  const pdfDir = path.join(os.tmpdir(), 'signal-carousels');
+  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
+  fs.writeFileSync(path.join(pdfDir, `${postId}.pdf`), pdfBuffer);
 
   return {
     pdfUrl: `/api/posts/${postId}/carousel-pdf`,
     isPermanent: false,
     slideCount: slides.length,
-    slideImageUrls: [],
+    slideImageUrls,
   };
-}
-
-/**
- * Fetches an image from a URL and returns it as a Buffer.
- */
-async function fetchImageBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-  }
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
 }

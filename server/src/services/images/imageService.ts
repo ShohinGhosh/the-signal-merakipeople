@@ -1,8 +1,12 @@
 import { generateImage, AspectRatio } from './falClient';
+import { generateImageWithGemini, isGeminiImageAvailable } from './geminiImageClient';
 import { uploadImageToAzure, isAzureConfigured } from './azureBlobClient';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export interface ImageGenerationResult {
-  /** The primary image URL (Azure Blob or fal.ai temp URL) */
+  /** The primary image URL (Azure Blob, local, or fal.ai temp URL) */
   imageUrl: string;
   /** All variation URLs */
   imageVariations: string[];
@@ -16,14 +20,9 @@ export interface ImageGenerationResult {
  * High-level image generation orchestrator.
  *
  * Flow:
- * 1. Call fal.ai (Nano Banana Pro) to generate image(s) from the prompt
- * 2. If Azure Blob is configured: fetch temp URLs → upload buffer to Azure → return permanent URLs
- * 3. If Azure is NOT configured: return fal.ai temp URLs (they expire in ~1 hour)
- *
- * @param prompt - The image generation prompt
- * @param postId - Post ID (used for blob naming)
- * @param numVariations - Number of image variations to generate (default 1)
- * @param aspectRatio - Aspect ratio for the image (default '1:1', use '16:9' for video thumbnails)
+ * 1. Try Gemini if available (no FAL_KEY needed)
+ * 2. Fall back to fal.ai if FAL_KEY is set
+ * 3. Upload to Azure if configured, otherwise serve locally
  */
 export async function generateAndStoreImage(
   prompt: string,
@@ -31,39 +30,68 @@ export async function generateAndStoreImage(
   numVariations = 1,
   aspectRatio: AspectRatio = '1:1'
 ): Promise<ImageGenerationResult> {
-  // Step 1: Generate via fal.ai (Nano Banana Pro)
-  const falResult = await generateImage(prompt, aspectRatio, '1K', numVariations);
+  let imageBuffer: Buffer | null = null;
 
-  // Step 2: Upload to Azure Blob Storage if configured, otherwise return temp URLs
-  if (isAzureConfigured()) {
-    const permanentUrls: string[] = [];
-
-    for (let i = 0; i < falResult.imageUrls.length; i++) {
-      const tempUrl = falResult.imageUrls[i];
-      const buffer = await fetchImageBuffer(tempUrl);
-      const blobName = `posts/${postId}/${i}.png`;
-      const azureUrl = await uploadImageToAzure(buffer, blobName);
-      permanentUrls.push(azureUrl);
-      console.log(`[imageService] Uploaded image ${i} to Azure: ${blobName}`);
+  // Strategy 1: Try Gemini (preferred — uses existing GEMINI_API_KEY)
+  if (isGeminiImageAvailable()) {
+    try {
+      console.log(`[imageService] Generating cover image via Gemini...`);
+      const result = await generateImageWithGemini(prompt);
+      imageBuffer = result.buffer;
+    } catch (err: any) {
+      console.warn(`[imageService] Gemini image generation failed: ${err.message}`);
     }
-
-    return {
-      imageUrl: permanentUrls[0],
-      imageVariations: permanentUrls,
-      isPermanent: true,
-      prompt,
-    };
   }
 
-  // Azure not configured — return temp URLs with a warning
-  console.warn('[imageService] Azure Blob not configured. Returning temporary fal.ai URLs (expire in ~1 hour).');
+  // Strategy 2: Fall back to fal.ai
+  if (!imageBuffer && process.env.FAL_KEY) {
+    try {
+      console.log(`[imageService] Generating cover image via fal.ai...`);
+      const falResult = await generateImage(prompt, aspectRatio, '1K', numVariations);
 
-  return {
-    imageUrl: falResult.imageUrls[0],
-    imageVariations: falResult.imageUrls,
-    isPermanent: false,
-    prompt,
-  };
+      if (isAzureConfigured()) {
+        const permanentUrls: string[] = [];
+        for (let i = 0; i < falResult.imageUrls.length; i++) {
+          const tempUrl = falResult.imageUrls[i];
+          const buffer = await fetchImageBuffer(tempUrl);
+          const blobName = `posts/${postId}/${i}.png`;
+          const azureUrl = await uploadImageToAzure(buffer, blobName);
+          permanentUrls.push(azureUrl);
+        }
+        return { imageUrl: permanentUrls[0], imageVariations: permanentUrls, isPermanent: true, prompt };
+      }
+
+      return { imageUrl: falResult.imageUrls[0], imageVariations: falResult.imageUrls, isPermanent: false, prompt };
+    } catch (err: any) {
+      console.warn(`[imageService] fal.ai image generation failed: ${err.message}`);
+    }
+  }
+
+  // If we have a Gemini buffer, store it
+  if (imageBuffer) {
+    if (isAzureConfigured()) {
+      try {
+        const blobName = `posts/${postId}/cover.png`;
+        const azureUrl = await uploadImageToAzure(imageBuffer, blobName);
+        console.log(`[imageService] Cover image uploaded to Azure: ${blobName}`);
+        return { imageUrl: azureUrl, imageVariations: [azureUrl], isPermanent: true, prompt };
+      } catch (azureErr: any) {
+        console.warn(`[imageService] Azure upload failed, saving locally: ${azureErr.message}`);
+      }
+    }
+
+    // Save locally and serve via API
+    const tmpDir = path.join(os.tmpdir(), 'signal-covers');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpPath = path.join(tmpDir, `${postId}.png`);
+    fs.writeFileSync(tmpPath, imageBuffer);
+    console.log(`[imageService] Cover image saved locally: ${tmpPath}`);
+
+    const localUrl = `/api/posts/${postId}/cover-image`;
+    return { imageUrl: localUrl, imageVariations: [localUrl], isPermanent: false, prompt };
+  }
+
+  throw new Error('No image generation provider available (need GEMINI_API_KEY or FAL_KEY)');
 }
 
 /**
@@ -79,8 +107,8 @@ async function fetchImageBuffer(url: string): Promise<Buffer> {
 }
 
 /**
- * Check if image generation is available (FAL_KEY is set).
+ * Check if image generation is available (Gemini or FAL_KEY).
  */
 export function isImageGenerationAvailable(): boolean {
-  return !!(process.env.FAL_KEY);
+  return isGeminiImageAvailable() || !!(process.env.FAL_KEY);
 }
