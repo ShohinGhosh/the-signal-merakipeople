@@ -944,6 +944,88 @@ function ContentReviewView({
   );
 }
 
+// ============ Carousel Slides Editor ============
+function CarouselSlidesEditor({ post, onPostUpdate }: { post: Post; onPostUpdate: () => void }) {
+  const [slides, setSlides] = useState(
+    (post.draftCarouselOutline || []).map((s: any) => ({
+      slideNumber: s.slideNumber,
+      content: s.content || '',
+      type: s.type || (s.slideNumber === 1 ? 'hook' : 'content'),
+    }))
+  );
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const updateSlide = (idx: number, content: string) => {
+    const updated = [...slides];
+    updated[idx] = { ...updated[idx], content };
+    setSlides(updated);
+    setDirty(true);
+  };
+
+  const saveSlides = async () => {
+    setSaving(true);
+    try {
+      await postsAPI.update(post._id, { draftCarouselOutline: slides });
+      setDirty(false);
+      onPostUpdate();
+    } catch (err) {
+      console.error('Save slides failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Layers size={12} className="text-purple-500" />
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Carousel Slides</span>
+          <span className="text-[10px] text-slate-300">{slides.length} slides</span>
+        </div>
+        {dirty && (
+          <button
+            onClick={saveSlides}
+            disabled={saving}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-40 transition-colors"
+          >
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+            Save Slides
+          </button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {slides.map((slide, i) => (
+          <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-bold text-slate-400">#{slide.slideNumber}</span>
+              <span
+                className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                  slide.type === 'hook'
+                    ? 'bg-purple-50 text-purple-600'
+                    : slide.type === 'cta'
+                    ? 'bg-orange-50 text-orange-600'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {slide.type}
+              </span>
+            </div>
+            <textarea
+              value={slide.content}
+              onChange={(e) => updateSlide(i, e.target.value)}
+              placeholder={`Slide ${slide.slideNumber} content...`}
+              className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-700 resize-none focus:outline-none focus:border-purple-300 min-h-[60px]"
+              rows={3}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ============ Content Card (for Content Review tab) ============
 function ContentCard({
   post,
@@ -1267,39 +1349,9 @@ function ContentCard({
                 </div>
               )}
 
-              {/* Carousel slides preview (inline under content for carousel format) */}
+              {/* Carousel slides — editable */}
               {fmt === 'carousel' && post.draftCarouselOutline?.length > 0 && (
-                <div className="mt-3">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Layers size={12} className="text-purple-500" />
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Carousel Slides</span>
-                    <span className="text-[10px] text-slate-300">{post.draftCarouselOutline.length} slides</span>
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {post.draftCarouselOutline.map((slide, i) => (
-                      <div
-                        key={i}
-                        className="flex-shrink-0 w-36 bg-slate-50 border border-slate-200 rounded-lg p-2.5"
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[9px] font-medium text-slate-400">#{slide.slideNumber}</span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                              slide.type === 'hook'
-                                ? 'bg-purple-50 text-purple-600'
-                                : slide.type === 'cta'
-                                ? 'bg-orange-50 text-orange-600'
-                                : 'bg-slate-100 text-slate-500'
-                            }`}
-                          >
-                            {slide.type}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 line-clamp-4 leading-relaxed">{slide.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <CarouselSlidesEditor post={post} onPostUpdate={onPostUpdate} />
               )}
 
               {/* Feedback: Thumbs up/down + dynamic quick fixes */}

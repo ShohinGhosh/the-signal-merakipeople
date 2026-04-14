@@ -438,45 +438,41 @@ function renderCtaSlide(
    AI Image-based carousel (fal.ai Nano Banana Pro)
    ═════════════════════════════════════════════ */
 
-function buildSlidePrompt(
+/**
+ * Build a prompt for an AI-generated BACKGROUND image (no text).
+ * Text will be overlaid programmatically by PDFKit for pixel-perfect rendering.
+ */
+function buildBackgroundPrompt(
   slide: CarouselSlideInput,
   totalSlides: number,
-  title: string,
-  author: string
+  title: string
 ): string {
-  const slideType = slide.type;
-  const slideNum = slide.slideNumber;
-
-  let designInstruction = '';
-  if (slideType === 'hook') {
-    designInstruction = 'This is the opening hook slide. Bold, attention-grabbing typography. Use a strong visual hierarchy with the key phrase prominent. Dark or rich background with contrasting text. Make someone stop scrolling.';
-  } else if (slideType === 'cta') {
-    designInstruction = 'This is the final call-to-action slide. Clear, direct message. Include visual cues for engagement (arrow, hand, or comment icon). Use brand accent colour prominently. Professional but inviting.';
+  let mood = '';
+  if (slide.type === 'hook') {
+    mood = 'Bold, dramatic, high-contrast. Dark navy/indigo background with subtle coral and orange gradient accents. Abstract geometric shapes — angular lines, overlapping translucent rectangles. Conveys urgency and disruption.';
+  } else if (slide.type === 'cta') {
+    mood = 'Warm, inviting, energetic. Rich coral/orange gradient flowing into deep navy. Soft glowing circular shapes. Conveys action and connection. Bottom area slightly darker for button placement.';
+  } else if (slide.slideNumber % 2 === 0) {
+    mood = 'Clean, professional, light. Soft off-white/light grey background with subtle navy geometric accents — thin lines, dots, or minimal shapes on edges. Spacious and airy feel. Large open center area.';
   } else {
-    designInstruction = 'This is an informational content slide. Clean, readable layout. Use clear typography with good visual hierarchy. Include subtle design elements (lines, shapes, icons) to support the text. Professional and modern.';
+    mood = 'Sophisticated, deep. Dark navy/indigo background with subtle lighter indigo geometric patterns — thin grid lines, abstract nodes, or flowing curves. Professional and modern. Large open center area.';
   }
 
   return [
-    `Create a 1:1 square social media carousel slide (slide ${slideNum} of ${totalSlides}).`,
+    `Create a 1:1 square abstract background image for a professional LinkedIn carousel slide.`,
     '',
-    `SLIDE TEXT CONTENT:`,
-    `"${slide.content}"`,
+    `MOOD & STYLE:`,
+    mood,
     '',
-    `DESIGN REQUIREMENTS:`,
-    designInstruction,
-    '',
-    `STYLE:`,
-    `- Modern, minimal corporate design suitable for LinkedIn`,
-    `- Clean sans-serif typography (no handwriting fonts)`,
-    `- Text must be clearly readable and accurately rendered`,
-    `- Use a consistent colour palette: deep navy (#1E1B4B), coral accent (#FF6B6B), white`,
-    `- Include the slide number "${slideNum}/${totalSlides}" small in a corner`,
-    `- No stock photos — use flat design, geometric shapes, or abstract patterns as background elements`,
-    `- Brand: MerakiPeople — a growth consultancy. Use "MerakiPeople" as the brand name (NOT the author's personal name)`,
-    `- Include a small "MerakiPeople" watermark or logo text in a corner`,
-    `- Topic: ${title}`,
-    '',
-    `CRITICAL: The text content must be rendered accurately and legibly. This is the most important requirement.`,
+    `REQUIREMENTS:`,
+    `- This is ONLY a background — DO NOT include any text, words, letters, numbers, or typography`,
+    `- DO NOT write any words on the image at all`,
+    `- Keep the center area relatively clean and open (text will be overlaid later)`,
+    `- Use colour palette: deep navy (#1E1B4B), coral (#FF6B6B), white, subtle indigo (#4338CA)`,
+    `- Abstract, geometric, minimal — like a premium consulting firm's slide deck`,
+    `- No photos, no people, no icons, no logos — pure abstract visual design`,
+    `- High quality, smooth gradients, professional feel`,
+    `- Topic context: ${title}`,
   ].join('\n');
 }
 
@@ -504,15 +500,15 @@ export async function generateCarouselPdf(
   }
 
   const provider = useGemini ? 'Gemini' : 'fal.ai Nano Banana Pro';
-  console.log(`[carouselPdf] Generating ${slides.length} slide images via ${provider}...`);
+  console.log(`[carouselPdf] Generating ${slides.length} background images via ${provider}...`);
 
-  const slideImageBuffers: Buffer[] = [];
+  // Generate AI backgrounds for each slide
+  const bgBuffers: (Buffer | null)[] = [];
   const slideImageUrls: string[] = [];
 
-  // Generate slides sequentially for Gemini (rate limits), batch for fal.ai
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
-    const prompt = buildSlidePrompt(slide, slides.length, title, author);
+    const prompt = buildBackgroundPrompt(slide, slides.length, title);
 
     try {
       let buffer: Buffer;
@@ -521,10 +517,9 @@ export async function generateCarouselPdf(
       if (useGemini) {
         const result = await generateImageWithGemini(prompt);
         buffer = result.buffer;
-        // Save locally for URL reference
         const tmpDir = path.join(os.tmpdir(), 'signal-carousels', postId);
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const slidePath = path.join(tmpDir, `slide-${slide.slideNumber}.png`);
+        const slidePath = path.join(tmpDir, `bg-${slide.slideNumber}.jpg`);
         fs.writeFileSync(slidePath, buffer);
         url = slidePath;
       } else {
@@ -533,21 +528,18 @@ export async function generateCarouselPdf(
         buffer = await fetchImageBuffer(url);
       }
 
-      slideImageBuffers.push(buffer);
+      bgBuffers.push(buffer);
       slideImageUrls.push(url);
-      console.log(`[carouselPdf] Slide ${slide.slideNumber}/${slides.length} generated (${(buffer.length / 1024).toFixed(1)} KB)`);
+      console.log(`[carouselPdf] Background ${slide.slideNumber}/${slides.length} generated (${(buffer.length / 1024).toFixed(1)} KB)`);
     } catch (err: any) {
-      console.warn(`[carouselPdf] Failed to generate slide ${slide.slideNumber}: ${err.message}`);
+      console.warn(`[carouselPdf] Failed to generate background ${slide.slideNumber}: ${err.message}`);
+      bgBuffers.push(null);
     }
   }
 
-  if (slideImageBuffers.length === 0) {
-    console.warn('[carouselPdf] All slide image generations failed, falling back to text PDF');
-    return generateTextCarouselPdf(slides, postId, title, author);
-  }
+  console.log(`[carouselPdf] ${bgBuffers.filter(Boolean).length}/${slides.length} backgrounds generated via ${provider}`);
 
-  console.log(`[carouselPdf] ${slideImageBuffers.length}/${slides.length} slide images generated via ${provider}`);
-
+  // Build PDF: AI background + programmatic text overlay per slide
   const pageSize = PAGE;
   const doc = new PDFDocument({
     size: [pageSize, pageSize],
@@ -567,9 +559,121 @@ export async function generateCarouselPdf(
     doc.on('error', reject);
   });
 
-  for (let i = 0; i < slideImageBuffers.length; i++) {
+  for (let i = 0; i < slides.length; i++) {
     if (i > 0) doc.addPage();
-    doc.image(slideImageBuffers[i], 0, 0, { width: pageSize, height: pageSize });
+    const slide = slides[i];
+    const bg = bgBuffers[i];
+
+    if (bg) {
+      // Draw AI background
+      doc.image(bg, 0, 0, { width: pageSize, height: pageSize });
+    } else {
+      // Fallback solid background
+      if (slide.type === 'hook' || slide.type === 'cta') {
+        const bgGrad = doc.linearGradient(0, 0, pageSize * 0.3, pageSize);
+        bgGrad.stop(0, C.navy).stop(1, C.navyMid);
+        doc.rect(0, 0, pageSize, pageSize).fill(bgGrad);
+      } else if (slide.slideNumber % 2 === 0) {
+        doc.rect(0, 0, pageSize, pageSize).fill(C.slate50);
+      } else {
+        const bgGrad = doc.linearGradient(0, 0, 0, pageSize);
+        bgGrad.stop(0, C.navyMid).stop(1, C.navy);
+        doc.rect(0, 0, pageSize, pageSize).fill(bgGrad);
+      }
+    }
+
+    // Overlay semi-transparent panel for text readability
+    const isDark = slide.type === 'hook' || slide.type === 'cta' || slide.slideNumber % 2 !== 0;
+    doc.save();
+    doc.opacity(isDark ? 0.7 : 0.75);
+    doc.roundedRect(30, 60, pageSize - 60, pageSize - 110, 16).fill(isDark ? '#0F0D2E' : '#FFFFFF');
+    doc.restore();
+
+    // Top accent gradient bar
+    const grad = doc.linearGradient(0, 0, pageSize, 0);
+    grad.stop(0, C.coral).stop(1, C.indigo);
+    doc.rect(0, 0, pageSize, 5).fill(grad);
+
+    // Slide number pill
+    doc.save();
+    roundedRect(doc, 40, 24, 44, 26, 13);
+    doc.fill(C.coral);
+    doc.restore();
+    doc.font('Helvetica-Bold').fontSize(11).fill(C.white);
+    doc.text(`${slide.slideNumber}`, 40, 31, { width: 44, align: 'center' });
+
+    // Type label
+    const typeLabel = slide.type === 'hook' ? 'HOOK' : slide.type === 'cta' ? 'CTA' : 'INSIGHT';
+    const labelColor = isDark ? C.white60 : C.white40;
+    doc.font('Helvetica-Bold').fontSize(8).fill(labelColor);
+    doc.text(typeLabel, 94, 33);
+
+    // Title — right aligned
+    doc.font('Helvetica').fontSize(8).fill(labelColor);
+    doc.text(title.toUpperCase(), pageSize - 250, 33, { width: 210, align: 'right' });
+
+    // Main content text
+    const textColor = isDark ? C.white : C.slate900;
+    const textX = 54;
+    const textW = pageSize - 108;
+    const isHero = slide.type === 'hook' || slide.type === 'cta';
+    const fontSize = getContentFontSize(slide.content, isHero);
+
+    // Split multi-paragraph content
+    const lines = slide.content.split('\n').filter(l => l.trim());
+    const hasHeadline = lines.length > 1 && lines[0].length < 80;
+
+    if (hasHeadline) {
+      const headSize = Math.min(getContentFontSize(lines[0], true), 30);
+      const headY = 90;
+      doc.font('Helvetica-Bold').fontSize(headSize).fill(textColor);
+      doc.text(lines[0], textX, headY, { width: textW, lineGap: 8 });
+
+      const bodyText = lines.slice(1).join('\n');
+      const bodySize = Math.min(getContentFontSize(bodyText, false), 18);
+      const bodyColor = isDark ? C.white90 : C.slate700;
+      doc.font('Helvetica').fontSize(bodySize).fill(bodyColor);
+      doc.text(bodyText, textX, headY + headSize + 28, {
+        width: textW,
+        lineGap: 10,
+        paragraphGap: 14,
+      });
+    } else {
+      // Center vertically
+      const estLines = Math.ceil(slide.content.length / ((textW) / (fontSize * 0.5)));
+      const estHeight = estLines * (fontSize + fontSize * 0.4);
+      const textY = Math.max(90, (pageSize - estHeight) / 2 - 10);
+
+      doc.font('Helvetica-Bold').fontSize(fontSize).fill(textColor);
+      doc.text(slide.content, textX, textY, {
+        width: textW,
+        align: isHero ? 'center' : 'left',
+        lineGap: fontSize * 0.4,
+        paragraphGap: fontSize * 0.3,
+      });
+    }
+
+    // CTA button for cta slides
+    if (slide.type === 'cta') {
+      const btnW = 220;
+      const btnH = 44;
+      const btnX = (pageSize - btnW) / 2;
+      const btnY = pageSize - 90;
+      const btnGrad = doc.linearGradient(btnX, btnY, btnX + btnW, btnY);
+      btnGrad.stop(0, C.coral).stop(1, C.coralGlow);
+      doc.save();
+      doc.roundedRect(btnX, btnY, btnW, btnH, 22).fill(btnGrad);
+      doc.restore();
+      doc.font('Helvetica-Bold').fontSize(13).fill(C.white);
+      doc.text('Follow for more \u2192', btnX, btnY + 14, { width: btnW, align: 'center' });
+    }
+
+    // Footer
+    drawFooter(doc, slide.slideNumber, slides.length, !isDark);
+
+    // Brand watermark
+    doc.font('Helvetica-Bold').fontSize(7).fill(isDark ? C.white40 : C.white40);
+    doc.text('MerakiPeople', pageSize - 110, pageSize - 36, { width: 80, align: 'right' });
   }
 
   doc.end();

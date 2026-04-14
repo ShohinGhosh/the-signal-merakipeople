@@ -108,8 +108,12 @@ export async function execute(
         post.hashtags = useParsed ? (parsed.hashtags || post.hashtags) : post.hashtags;
 
         // Handle carousel outline if format is carousel
-        if (format === 'carousel' && parsed.carouselOutline) {
-          post.draftCarouselOutline = parsed.carouselOutline;
+        if (format === 'carousel' && parsed.carouselOutline && Array.isArray(parsed.carouselOutline)) {
+          post.draftCarouselOutline = parsed.carouselOutline.map((slide: any, idx: number) => ({
+            slideNumber: slide.slideNumber || idx + 1,
+            content: slide.headline ? `${slide.headline}\n${slide.bodyText || ''}` : slide.content || slide.text || '',
+            type: idx === 0 ? 'hook' : (idx === parsed.carouselOutline.length - 1 ? 'cta' : 'content'),
+          }));
         }
 
         post.aiEvidence = {
