@@ -14,7 +14,17 @@ system_prompt: |
     - CTA must be natural and aligned with the campaign goal. Never use "Like and share!" or "What do you think?" unless strategically justified.
     - Format selection must match the content type: use carousels for frameworks and step-by-step content, polls for audience research, text posts for hot takes and stories, documents for deep dives.
     - Hashtags: 3-5 maximum, mix of niche and broad. No hashtag should have fewer than 1K posts or more than 10M posts.
-    - If this is a carousel, provide a complete slide-by-slide outline.
+    - If this is a carousel, you MUST provide a complete carouselOutline array. This is NON-NEGOTIABLE for carousel format.
+
+    CAROUSEL RULES (when format is carousel):
+    - 5-8 slides is the sweet spot. Never fewer than 5.
+    - Slide 1 (hook): A provocative, scroll-stopping statement. No "5 tips for..." — use a bold claim, a shocking stat, or a vulnerable confession. This slide ALONE must make someone stop and swipe.
+    - Slides 2-N (content): Each slide = ONE powerful idea. Not a paragraph dump. Think: "One slide, one punch." Use frameworks, contrasts, before/after, myths vs reality, numbered insights with sharp explanations.
+    - Final slide (cta): Clear call to action — follow, DM, save, comment with a specific word. Make it feel like a conversation, not a billboard.
+    - Each slide's content should be 20-60 words. Dense enough to deliver value, short enough to read in 3 seconds.
+    - Use the author's voice throughout — contractions, specific examples, real numbers when possible.
+    - The carousel should tell a STORY arc: problem → insight → framework → proof → action.
+    - NEVER use filler slides like "Let's dive in!" or "Are you ready?" — every slide must deliver value.
     - If generating an image prompt, follow brand guidelines: deep navy #152B68 background, warm coral #FF6F61 accents, Outfit font style, no stock photography, no human faces, geometric/abstract elements, editorial clean aesthetic.
 
   Voice rules:
@@ -143,13 +153,17 @@ output_schema:
         properties:
           slideNumber:
             type: integer
+            description: "1-indexed slide position"
           headline:
             type: string
+            description: "Bold headline for this slide — the main idea in 5-12 words"
           bodyText:
             type: string
-          visualDirection:
+            description: "Supporting text — 20-60 words of sharp, value-packed content. No fluff."
+          content:
             type: string
-      description: "Required if format is carousel. Complete slide-by-slide outline."
+            description: "Full slide text combining headline and body. This is what appears on the slide."
+      description: "REQUIRED for carousel format. 5-8 slides. Slide 1=hook, last slide=CTA, middle slides=value bombs. Each slide must stand alone as a powerful insight while building a narrative arc."
     imagePrompt:
       type: string
       description: "Brand-consistent image generation prompt using #152B68 deep navy background and #FF6F61 warm coral accents, Outfit font style, no stock photography, no human faces, geometric elements, editorial aesthetic"

@@ -955,6 +955,24 @@ function CarouselSlidesEditor({ post, onPostUpdate }: { post: Post; onPostUpdate
   );
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const hasContent = slides.some((s) => s.content.trim().length > 0);
+
+  // Sync with post data when it changes externally
+  useEffect(() => {
+    if (post.draftCarouselOutline?.length) {
+      const newSlides = post.draftCarouselOutline.map((s: any) => ({
+        slideNumber: s.slideNumber,
+        content: s.content || '',
+        type: s.type || (s.slideNumber === 1 ? 'hook' : 'content'),
+      }));
+      // Only update if content actually changed (avoid cursor jump)
+      const hasNewContent = newSlides.some((s: any) => s.content.trim().length > 0);
+      if (hasNewContent && !dirty) {
+        setSlides(newSlides);
+      }
+    }
+  }, [post.draftCarouselOutline]);
 
   const updateSlide = (idx: number, content: string) => {
     const updated = [...slides];
@@ -976,6 +994,19 @@ function CarouselSlidesEditor({ post, onPostUpdate }: { post: Post; onPostUpdate
     }
   };
 
+  const regenerateSlides = async () => {
+    setRegenerating(true);
+    try {
+      await postsAPI.generateContent(post._id, true);
+      onPostUpdate();
+      setDirty(false);
+    } catch (err) {
+      console.error('Regenerate slides failed:', err);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between mb-2">
@@ -984,17 +1015,36 @@ function CarouselSlidesEditor({ post, onPostUpdate }: { post: Post; onPostUpdate
           <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Carousel Slides</span>
           <span className="text-[10px] text-slate-300">{slides.length} slides</span>
         </div>
-        {dirty && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={saveSlides}
-            disabled={saving}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-40 transition-colors"
+            onClick={regenerateSlides}
+            disabled={regenerating || saving}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs text-purple-600 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 disabled:opacity-40 transition-colors"
           >
-            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-            Save Slides
+            {regenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+            {regenerating ? 'Generating...' : hasContent ? 'Regenerate Slides' : 'Generate Slide Content'}
           </button>
-        )}
+          {dirty && (
+            <button
+              onClick={saveSlides}
+              disabled={saving}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs text-white bg-purple-600 rounded hover:bg-purple-700 disabled:opacity-40 transition-colors"
+            >
+              {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+              Save Slides
+            </button>
+          )}
+        </div>
       </div>
+
+      {regenerating && (
+        <div className="mb-3 p-4 bg-purple-50 border border-purple-200 rounded-lg text-center">
+          <Loader2 size={20} className="animate-spin text-purple-500 mx-auto mb-2" />
+          <p className="text-xs text-purple-600 font-medium">Generating carousel content...</p>
+          <p className="text-[10px] text-purple-400 mt-1">Crafting hook, insights, and CTA for each slide</p>
+        </div>
+      )}
+
       <div className="space-y-2">
         {slides.map((slide, i) => (
           <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg p-3">

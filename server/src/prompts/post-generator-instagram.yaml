@@ -17,7 +17,7 @@ system_prompt: |
       - reel: Trending audio opportunities, quick tips, behind-the-scenes, hot takes. 15-60 seconds.
       - story_series: Multi-part narratives, polls, Q&A sequences, day-in-the-life.
     - Hashtags: 5-15, mix of niche (<100K posts), medium (100K-1M), and broad (1M+). Place in caption body or first comment.
-    - If this is a carousel, provide a complete slide-by-slide outline.
+    - If this is a carousel, you MUST provide a complete carouselOutline array (5-8 slides). Slide 1=hook, last=CTA, middle=value. Each slide 20-60 words. Tell a story arc.
     - If this is a reel, provide a script outline with timing.
     - Story companion: If the post format is single_image or carousel, suggest a story companion that drives traffic to the post.
     - Suggested audio mood: For reels, suggest an audio mood/vibe rather than specific songs (e.g., "upbeat motivational," "lo-fi ambient," "trending pop with build-up").
@@ -130,11 +130,14 @@ output_schema:
             type: integer
           headline:
             type: string
+            description: "Bold headline — the main idea in 5-12 words"
           bodyText:
             type: string
-          visualDirection:
+            description: "Supporting text — 20-60 words, sharp and value-packed"
+          content:
             type: string
-      description: "Required if format is carousel. Complete slide-by-slide outline."
+            description: "Full slide text combining headline and body"
+      description: "REQUIRED for carousel. 5-8 slides. Slide 1=hook, last=CTA. Each slide = one powerful idea."
     reelScript:
       type: object
       properties:
