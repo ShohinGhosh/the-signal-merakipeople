@@ -1027,7 +1027,7 @@ router.post('/generate-week', async (req: Request, res: Response) => {
         const post = await Post.create({
           author: normalizedAuthor as 'shohini' | 'sanjoy',
           platform: task.platform || 'linkedin',
-          format: task.format || 'text_post',
+          format: task.format || 'carousel',
           contentPillar: task.contentPillar || '',
           scheduledAt,
           status: 'draft',

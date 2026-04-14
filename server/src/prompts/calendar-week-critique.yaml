@@ -13,6 +13,7 @@ system_prompt: |
   - MORE than 2 posts have generic hooks like "Tips for better X" or "Why X matters"
   - ANY weekday (Mon-Fri) has zero posts
   - ALL posts are the same format
+  - ANY post uses "text_post" format unless it's clearly sharing a report/data or resharing someone else's content
   - A single author has ALL the posts (no mix of founders)
 
   === SCORING CRITERIA ===
