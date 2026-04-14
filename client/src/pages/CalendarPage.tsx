@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -111,7 +112,9 @@ function formatWeekLabel(weekStart: Date): string {
 }
 
 export default function CalendarPage() {
+  const { user } = useAuth();
   const { strategy: currentStrategy, isComplete } = useStrategy();
+  const [authorFilter, setAuthorFilter] = useState<'mine' | 'all'>('mine');
   const [view, setView] = useState<ViewType>('calendar');
   const [weekStart, setWeekStart] = useState<Date>(getMonday(new Date()));
   const [weekData, setWeekData] = useState<WeekPlan | null>(null);
@@ -152,6 +155,43 @@ export default function CalendarPage() {
     autoRegenPollRef.current = setInterval(checkAutoRegen, 3000);
     return () => { if (autoRegenPollRef.current) clearInterval(autoRegenPollRef.current); };
   }, [autoRegen?.active]);
+
+  // Filter week data by author when "mine" is selected
+  const filteredWeekData = useMemo(() => {
+    if (!weekData) return null;
+    if (authorFilter === 'all') return weekData;
+
+    const myRole = user?.role;
+    if (!myRole) return weekData;
+
+    const filteredDays: Record<string, any[]> = {};
+    for (const [date, posts] of Object.entries(weekData.days)) {
+      filteredDays[date] = (posts as any[]).filter((p: any) => p.author === myRole);
+    }
+
+    const allPosts = Object.values(filteredDays).flat();
+    return {
+      ...weekData,
+      days: filteredDays,
+      posts: allPosts,
+      stats: {
+        ...weekData.stats,
+        total: allPosts.length,
+        byStatus: allPosts.reduce((acc: any, p: any) => {
+          acc[p.status] = (acc[p.status] || 0) + 1;
+          return acc;
+        }, {}),
+        byPlatform: allPosts.reduce((acc: any, p: any) => {
+          acc[p.platform] = (acc[p.platform] || 0) + 1;
+          return acc;
+        }, {}),
+        byAuthor: allPosts.reduce((acc: any, p: any) => {
+          acc[p.author] = (acc[p.author] || 0) + 1;
+          return acc;
+        }, {}),
+      },
+    };
+  }, [weekData, authorFilter, user?.role]);
 
   const loadWeek = useCallback(async () => {
     try {
@@ -279,14 +319,14 @@ export default function CalendarPage() {
     setWeekStart(getMonday(new Date()));
   };
 
-  const allPillars = weekData
-    ? [...new Set(weekData.posts.map((p) => p.contentPillar).filter(Boolean))]
+  const allPillars = filteredWeekData
+    ? [...new Set(filteredWeekData.posts.map((p) => p.contentPillar).filter(Boolean))]
     : [];
 
-  const totalTasks = weekData?.stats?.total || 0;
-  const completedTasks = (weekData?.stats?.byStatus?.published || 0) + (weekData?.stats?.byStatus?.scheduled || 0);
-  const allDrafts = totalTasks > 0 && (weekData?.stats?.byStatus?.draft || 0) === totalTasks;
-  const hasApproved = totalTasks > 0 && (weekData?.stats?.byStatus?.scheduled || 0) > 0;
+  const totalTasks = filteredWeekData?.stats?.total || 0;
+  const completedTasks = (filteredWeekData?.stats?.byStatus?.published || 0) + (filteredWeekData?.stats?.byStatus?.scheduled || 0);
+  const allDrafts = totalTasks > 0 && (filteredWeekData?.stats?.byStatus?.draft || 0) === totalTasks;
+  const hasApproved = totalTasks > 0 && (filteredWeekData?.stats?.byStatus?.scheduled || 0) > 0;
 
   if (!isComplete) {
     return (
@@ -372,10 +412,34 @@ export default function CalendarPage() {
             </div>
           )}
 
+          {/* Author filter toggle */}
+          <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setAuthorFilter('mine')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                authorFilter === 'mine'
+                  ? 'bg-white text-brand-coral shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              My Posts
+            </button>
+            <button
+              onClick={() => setAuthorFilter('all')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                authorFilter === 'all'
+                  ? 'bg-white text-brand-coral shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              All Posts
+            </button>
+          </div>
+
           {/* Quick stats */}
-          {weekData && totalTasks > 0 && (
+          {filteredWeekData && totalTasks > 0 && (
             <div className="flex items-center gap-3 text-xs text-slate-400">
-              {Object.entries(weekData.stats.byPlatform).map(([platform, count]) => (
+              {Object.entries(filteredWeekData.stats.byPlatform).map(([platform, count]) => (
                 <span key={platform} className="flex items-center gap-1">
                   {platform === 'linkedin' ? (
                     <Linkedin size={12} className="text-blue-600" />
@@ -387,13 +451,17 @@ export default function CalendarPage() {
                   {count}
                 </span>
               ))}
-              <span className="text-slate-200">|</span>
-              {Object.entries(weekData.stats.byAuthor).map(([author, count]) => (
-                <span key={author} className="flex items-center gap-1">
-                  <User size={12} />
-                  {author}: {count}
-                </span>
-              ))}
+              {authorFilter === 'all' && (
+                <>
+                  <span className="text-slate-200">|</span>
+                  {Object.entries(filteredWeekData.stats.byAuthor).map(([author, count]) => (
+                    <span key={author} className="flex items-center gap-1">
+                      <User size={12} />
+                      {author}: {count}
+                    </span>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -503,15 +571,15 @@ export default function CalendarPage() {
       )}
 
       {/* Strategy Evidence Bar */}
-      {weekData?.strategyContext && totalTasks > 0 && (
+      {filteredWeekData?.strategyContext && totalTasks > 0 && (
         <StrategyEvidenceBar
-          weekData={weekData}
+          weekData={filteredWeekData}
           allPillars={allPillars}
         />
       )}
 
       {/* Pillar Alignment Bar (shown when no strategy context, fallback) */}
-      {weekData && !weekData.strategyContext && allPillars.length > 0 && totalTasks > 0 && (
+      {filteredWeekData && !filteredWeekData.strategyContext && allPillars.length > 0 && totalTasks > 0 && (
         <div className="mb-4 bg-white shadow-sm border border-slate-200 rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2">
             <Target size={12} className="text-slate-400" />
@@ -519,7 +587,7 @@ export default function CalendarPage() {
           </div>
           <div className="flex gap-2">
             {allPillars.map((pillar) => {
-              const count = weekData.stats.byPillar[pillar] || 0;
+              const count = filteredWeekData.stats.byPillar[pillar] || 0;
               const pct = Math.round((count / totalTasks) * 100);
               const color = getPillarColor(pillar, allPillars);
               return (
@@ -581,12 +649,12 @@ export default function CalendarPage() {
         <div className="flex-1 flex items-center justify-center">
           <Loader2 size={24} className="animate-spin text-slate-300" />
         </div>
-      ) : !weekData || totalTasks === 0 ? (
+      ) : !filteredWeekData || totalTasks === 0 ? (
         <EmptyCalendar onGenerate={handleGenerate} generating={generating} />
       ) : view === 'calendar' ? (
         <CalendarView
           weekStart={weekStart}
-          weekData={weekData}
+          weekData={filteredWeekData}
           allPillars={allPillars}
           onSelectPost={setSelectedPost}
           onStatusChange={handleStatusChange}
@@ -594,14 +662,14 @@ export default function CalendarPage() {
         />
       ) : view === 'tasks' ? (
         <TaskView
-          weekData={weekData}
+          weekData={filteredWeekData}
           allPillars={allPillars}
           onSelectPost={setSelectedPost}
           onStatusChange={handleStatusChange}
         />
       ) : (
         <ContentReviewView
-          weekData={weekData}
+          weekData={filteredWeekData}
           allPillars={allPillars}
           onPostUpdate={loadWeek}
         />

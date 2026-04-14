@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { StrategyProvider } from './contexts/StrategyContext';
 import AppLayout from './components/layout/AppLayout';
+import LoginPage from './pages/LoginPage';
 import StrategyPage from './pages/StrategyPage';
 import JournalPage from './pages/JournalPage';
 import CalendarPage from './pages/CalendarPage';
@@ -12,11 +13,20 @@ import SettingsPage from './pages/SettingsPage';
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
 
-  if (loading || !isAuthenticated) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-brand-cloud flex items-center justify-center">
         <div className="text-slate-400">Loading...</div>
       </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
     );
   }
 

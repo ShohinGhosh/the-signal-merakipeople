@@ -8,8 +8,11 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { useStrategy } from '../../contexts/StrategyContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const NAV_ITEMS = [
   { path: '/strategy', label: 'Strategy', icon: Compass, requiresStrategy: false },
@@ -22,6 +25,7 @@ const NAV_ITEMS = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const { isComplete } = useStrategy();
+  const { user, logout } = useAuth();
 
   return (
     <aside
@@ -79,6 +83,31 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* User info + Logout */}
+      <div className="border-t border-white/10 p-3">
+        {!collapsed && user && (
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <div className="w-7 h-7 rounded-full bg-brand-coral/20 flex items-center justify-center">
+              <User size={14} className="text-brand-coral" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-white/90 truncate">{user.name}</div>
+              <div className="text-[10px] text-white/40 truncate">{user.email}</div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={logout}
+          className={`flex items-center gap-2 w-full px-3 py-2 text-xs text-white/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title="Sign out"
+        >
+          <LogOut size={14} />
+          {!collapsed && <span>Sign out</span>}
+        </button>
+      </div>
 
       {/* Collapse toggle */}
       <button

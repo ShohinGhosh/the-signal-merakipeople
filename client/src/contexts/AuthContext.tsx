@@ -9,10 +9,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Default credentials for auto-login
-const DEFAULT_EMAIL = 'shohini@merakipeople.com';
-const DEFAULT_PASSWORD = 'shohini123';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -50,15 +46,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Auto-login with default credentials
-    (async () => {
-      try {
-        await login(DEFAULT_EMAIL, DEFAULT_PASSWORD);
-      } catch {
-        setState((s) => ({ ...s, loading: false }));
-      }
-    })();
-  }, [login]);
+    // No stored session — go to login page
+    setState((s) => ({ ...s, loading: false }));
+  }, []);
 
   return (
     <AuthContext.Provider value={{ ...state, login, logout }}>
