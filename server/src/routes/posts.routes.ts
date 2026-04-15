@@ -633,7 +633,7 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
 
     // ── VIDEO FORMAT: Generate thumbnail (16:9) ──
     const isVideo = format === 'video_caption';
-    const aspectRatio = isVideo ? '16:9' : '1:1';
+    const imageAspectRatio = isVideo ? '16:9' : '1:1';
 
     // Use orchestrator to generate an image prompt via AI
     const evidenceContext = await gatherEvidenceContext(post.author, post.campaignId?.toString());
@@ -671,7 +671,7 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
           generatedImagePrompt,
           String(post._id),
           1,
-          aspectRatio as any
+          imageAspectRatio as any
         );
         post.imageUrl = imageResult.imageUrl;
         post.imageVariations = imageResult.imageVariations;
