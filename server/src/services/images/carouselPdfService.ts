@@ -31,19 +31,19 @@ const ASPECT_RATIOS: Record<string, [number, number]> = {
    Brand tokens — matching MerakiPeople / NotebookLM style
    ───────────────────────────────────────────── */
 const B = {
-  pageBg:     '#E8EDF5',   // soft blue-grey page
+  pageBg:     '#F5F5F5',   // clean light gray-white (matching NotebookLM spec)
   white:      '#FFFFFF',
   cardBg:     '#FFFFFF',
-  headBlack:  '#1A1A2E',   // near-black for big headings
+  headBlack:  '#152B68',   // deep navy for headlines (brand primary)
   bodyGrey:   '#4A4A5A',   // body text
   mutedGrey:  '#8B8B9E',   // captions
-  lightGrey:  '#C8CDD8',   // borders, subtle elements
+  lightGrey:  '#E0E0E0',   // borders, subtle elements
   coral:      '#FF6F61',   // accent — callouts, highlights, icons
   coralLight: '#FFF0EE',   // coral tint bg
   coralDark:  '#E85A4F',
   navy:       '#152B68',   // illustrations, icons
   navyLight:  '#2A4494',
-  navyTint:   '#E8ECF5',   // light navy tint
+  navyTint:   '#F0F2F8',   // light navy tint
   teal:       '#0EA5A0',   // secondary accent
   tealLight:  '#E6F7F6',
 };
@@ -82,8 +82,8 @@ function baseStyles(W: number, H: number): string {
       padding: 48px;
     }
 
-    /* ── Serif heading (editorial) ── */
-    .serif { font-family: 'DM Serif Display', Georgia, serif; }
+    /* ── Bold heading (clean B2B) ── */
+    .serif { font-family: 'Inter', -apple-system, sans-serif; font-weight: 800; }
 
     /* ── Top bar ── */
     .top-bar {
@@ -232,35 +232,290 @@ function baseStyles(W: number, H: number): string {
    SVG ILLUSTRATIONS — simple, clean, topic-adaptive
    ═══════════════════════════════════════════════════ */
 
-/** Pick an illustration SVG based on slide content keywords */
-function pickIllustration(content: string, type: string, slideNum: number): string {
+/**
+ * Pick an illustration SVG using narrative arc position first, then keywords.
+ * Narrative carousels follow: Hook → Moment → Problem → Consequence → Insight → CTA
+ * The slide's position in the story determines the visual mood.
+ */
+function pickIllustration(content: string, type: string, slideNum: number, totalSlides?: number): string {
   const text = content.toLowerCase();
+  const total = totalSlides || 7;
 
-  // Keyword → illustration mapping
+  // ── Narrative arc position mapping ──
+  // Slide 1: Hook/Scene entry — tension, split screen
+  if (type === 'hook' || slideNum === 1) return svgSceneEntry();
+
+  // Last slide: CTA — minimal, question-focused
+  if (type === 'cta' || slideNum === total) return svgCtaQuestion();
+
+  // Slide 2: The Moment — conversation, scene
+  if (slideNum === 2) {
+    if (text.includes('call') || text.includes('prospect') || text.includes('conversation') || text.includes('said'))
+      return svgConversation();
+    return svgConversation();
+  }
+
+  // Slide 3: The Mistake / Real Problem — broken input
+  if (slideNum === 3) {
+    if (text.includes('prompt') || text.includes('chatgpt') || text.includes('ai') || text.includes('typed'))
+      return svgBrokenInput();
+    return svgBrokenInput();
+  }
+
+  // Slide 4: The Output / Consequence — irrelevant result, red X
+  if (slideNum === 4) {
+    if (text.includes('irrelevant') || text.includes('email') || text.includes('output') || text.includes('feature'))
+      return svgIrrelevantOutput();
+    if (text.includes('died') || text.includes('lost') || text.includes('vendor') || text.includes('walked'))
+      return svgDealDeath();
+    return svgIrrelevantOutput();
+  }
+
+  // Slide 5: Consequence or Insight
+  if (slideNum === 5) {
+    if (text.includes('died') || text.includes('lost') || text.includes('vendor') || text.includes('walked'))
+      return svgDealDeath();
+    if (text.includes('amplif') || text.includes('context') || text.includes('chaos') || text.includes('feed'))
+      return svgTwoFunnels();
+    return svgDealDeath();
+  }
+
+  // Slide 6: The Principle / Insight — two paths, comparison
+  if (slideNum === 6) {
+    if (text.includes('amplif') || text.includes('context') || text.includes('chaos') || text.includes('feed') || text.includes('missing'))
+      return svgTwoFunnels();
+    return svgTwoFunnels();
+  }
+
+  // ── Keyword fallback for any other positions ──
   if (text.includes('team') || text.includes('people') || text.includes('hire') || text.includes('rep'))
     return svgTeam();
-  if (text.includes('data') || text.includes('chart') || text.includes('metric') || text.includes('analytics') || text.includes('number'))
+  if (text.includes('data') || text.includes('chart') || text.includes('metric') || text.includes('analytics'))
     return svgChart();
   if (text.includes('growth') || text.includes('scale') || text.includes('revenue') || text.includes('result'))
     return svgGrowth();
   if (text.includes('process') || text.includes('system') || text.includes('framework') || text.includes('step'))
     return svgProcess();
-  if (text.includes('brain') || text.includes('think') || text.includes('mindset') || text.includes('strategy') || text.includes('intelligence'))
+  if (text.includes('brain') || text.includes('think') || text.includes('mindset') || text.includes('strategy'))
     return svgBrain();
-  if (text.includes('time') || text.includes('fast') || text.includes('speed') || text.includes('week') || text.includes('month'))
-    return svgClock();
-  if (text.includes('connect') || text.includes('network') || text.includes('relationship') || text.includes('community'))
-    return svgNetwork();
   if (text.includes('target') || text.includes('goal') || text.includes('focus') || text.includes('icp'))
     return svgTarget();
-  if (text.includes('money') || text.includes('cost') || text.includes('price') || text.includes('roi') || text.includes('₹') || text.includes('$'))
+  if (text.includes('money') || text.includes('cost') || text.includes('price') || text.includes('roi'))
     return svgMoney();
-  if (text.includes('problem') || text.includes('challenge') || text.includes('pain') || text.includes('struggle'))
-    return svgProblem();
 
-  // Cycle through general illustrations
   const fallbacks = [svgLightbulb, svgRocket, svgPuzzle, svgMegaphone, svgShield];
   return fallbacks[slideNum % fallbacks.length]();
+}
+
+/* ── Narrative-arc-specific illustrations ── */
+
+/** Hook: Split screen — old vs new, with ghost/tension element */
+function svgSceneEntry(): string {
+  return `<svg width="220" height="180" viewBox="0 0 220 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Left panel (old/template) -->
+    <rect x="10" y="20" width="90" height="140" rx="8" fill="${B.navy}" opacity="0.08" stroke="${B.navy}" stroke-width="1.5" opacity="0.2"/>
+    <rect x="22" y="40" width="66" height="6" rx="3" fill="${B.navy}" opacity="0.15"/>
+    <rect x="22" y="54" width="50" height="4" rx="2" fill="${B.navy}" opacity="0.1"/>
+    <rect x="22" y="64" width="58" height="4" rx="2" fill="${B.navy}" opacity="0.1"/>
+    <rect x="22" y="74" width="42" height="4" rx="2" fill="${B.navy}" opacity="0.1"/>
+    <text x="55" y="120" text-anchor="middle" fill="${B.navy}" font-size="9" opacity="0.3" font-family="Inter">TEMPLATE</text>
+    <!-- Divider -->
+    <line x1="110" y1="10" x2="110" y2="170" stroke="${B.coral}" stroke-width="2" stroke-dasharray="6 4" opacity="0.4"/>
+    <!-- Right panel (AI/polished) -->
+    <rect x="120" y="20" width="90" height="140" rx="8" fill="${B.coral}" opacity="0.06" stroke="${B.coral}" stroke-width="1.5" opacity="0.3"/>
+    <rect x="132" y="40" width="66" height="6" rx="3" fill="${B.coral}" opacity="0.3"/>
+    <rect x="132" y="54" width="50" height="4" rx="2" fill="${B.coral}" opacity="0.2"/>
+    <rect x="132" y="64" width="58" height="4" rx="2" fill="${B.coral}" opacity="0.2"/>
+    <rect x="132" y="74" width="42" height="4" rx="2" fill="${B.coral}" opacity="0.2"/>
+    <text x="165" y="120" text-anchor="middle" fill="${B.coral}" font-size="9" opacity="0.5" font-family="Inter">AI OUTPUT</text>
+    <!-- Ghost crossing both -->
+    <circle cx="110" cy="90" r="18" fill="${B.navy}" opacity="0.06"/>
+    <text x="110" y="95" text-anchor="middle" fill="${B.coral}" font-size="16" opacity="0.5">⚡</text>
+    <!-- Arrow suggesting same result -->
+    <path d="M55 145 Q110 165 165 145" stroke="${B.navy}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity="0.2"/>
+    <text x="110" y="172" text-anchor="middle" fill="${B.coral}" font-size="8" font-weight="600" opacity="0.5" font-family="Inter">SAME RESULT</text>
+  </svg>`;
+}
+
+/** The Moment: Conversation scene — person on call with speech bubble */
+function svgConversation(): string {
+  return `<svg width="200" height="180" viewBox="0 0 200 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Person (rep) -->
+    <circle cx="50" cy="55" r="18" fill="${B.navy}" opacity="0.15"/>
+    <circle cx="50" cy="55" r="13" fill="${B.navy}"/>
+    <rect x="36" y="76" width="28" height="35" rx="6" fill="${B.navy}" opacity="0.8"/>
+    <!-- Notepad (empty) -->
+    <rect x="30" y="118" width="40" height="50" rx="4" fill="${B.white}" stroke="${B.navy}" stroke-width="1.5" opacity="0.3"/>
+    <line x1="36" y1="130" x2="64" y2="130" stroke="${B.navy}" stroke-width="0.8" opacity="0.15"/>
+    <line x1="36" y1="138" x2="64" y2="138" stroke="${B.navy}" stroke-width="0.8" opacity="0.15"/>
+    <line x1="36" y1="146" x2="64" y2="146" stroke="${B.navy}" stroke-width="0.8" opacity="0.15"/>
+    <!-- Speech bubble from prospect -->
+    <rect x="90" y="20" width="100" height="70" rx="12" fill="${B.coral}" opacity="0.1" stroke="${B.coral}" stroke-width="1.5" opacity="0.3"/>
+    <polygon points="95,90 105,80 115,90" fill="${B.coral}" opacity="0.1" stroke="${B.coral}" stroke-width="1.5" opacity="0.3"/>
+    <rect x="102" y="34" width="76" height="5" rx="2.5" fill="${B.coral}" opacity="0.25"/>
+    <rect x="102" y="45" width="60" height="4" rx="2" fill="${B.coral}" opacity="0.18"/>
+    <rect x="102" y="55" width="68" height="4" rx="2" fill="${B.coral}" opacity="0.18"/>
+    <rect x="102" y="65" width="45" height="4" rx="2" fill="${B.coral}" opacity="0.18"/>
+    <!-- Prospect silhouette -->
+    <circle cx="160" cy="120" r="14" fill="${B.coral}" opacity="0.2"/>
+    <circle cx="160" cy="120" r="10" fill="${B.coral}" opacity="0.6"/>
+    <rect x="148" y="137" width="24" height="30" rx="5" fill="${B.coral}" opacity="0.4"/>
+  </svg>`;
+}
+
+/** The Mistake: Broken input — laptop with bare prompt, fading context */
+function svgBrokenInput(): string {
+  return `<svg width="200" height="170" viewBox="0 0 200 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Laptop body -->
+    <rect x="30" y="25" width="140" height="95" rx="8" fill="${B.white}" stroke="${B.navy}" stroke-width="2" opacity="0.6"/>
+    <!-- Screen content - bare prompt -->
+    <rect x="42" y="38" width="116" height="12" rx="3" fill="${B.navy}" opacity="0.06"/>
+    <text x="48" y="48" fill="${B.navy}" font-size="8" opacity="0.35" font-family="Inter">&gt; Write a follow-up email for...</text>
+    <!-- Cursor blinking -->
+    <rect x="42" y="58" width="2" height="12" fill="${B.coral}" opacity="0.6"/>
+    <!-- Empty lines below (no context) -->
+    <rect x="42" y="78" width="80" height="3" rx="1.5" fill="${B.navy}" opacity="0.05"/>
+    <rect x="42" y="86" width="60" height="3" rx="1.5" fill="${B.navy}" opacity="0.05"/>
+    <rect x="42" y="94" width="70" height="3" rx="1.5" fill="${B.navy}" opacity="0.05"/>
+    <!-- Laptop base -->
+    <rect x="20" y="120" width="160" height="8" rx="4" fill="${B.navy}" opacity="0.15"/>
+    <!-- Fading context trail behind -->
+    <circle cx="25" cy="60" r="8" fill="${B.coral}" opacity="0.15"/>
+    <circle cx="12" cy="45" r="5" fill="${B.coral}" opacity="0.1"/>
+    <circle cx="18" cy="80" r="6" fill="${B.coral}" opacity="0.08"/>
+    <text x="100" y="148" text-anchor="middle" fill="${B.coral}" font-size="9" font-weight="600" opacity="0.4" font-family="Inter">CONTEXT LOST</text>
+    <!-- X marks for missing inputs -->
+    <g transform="translate(150, 40)" opacity="0.4">
+      <line x1="0" y1="0" x2="10" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="10" y1="0" x2="0" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(150, 60)" opacity="0.3">
+      <line x1="0" y1="0" x2="10" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="10" y1="0" x2="0" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(150, 80)" opacity="0.2">
+      <line x1="0" y1="0" x2="10" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="10" y1="0" x2="0" y2="10" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+}
+
+/** The Output: Polished email with red X markers over missing context */
+function svgIrrelevantOutput(): string {
+  return `<svg width="200" height="170" viewBox="0 0 200 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Email envelope -->
+    <rect x="25" y="20" width="150" height="110" rx="10" fill="${B.white}" stroke="${B.navy}" stroke-width="1.5" opacity="0.4"/>
+    <!-- Email header -->
+    <rect x="40" y="32" width="80" height="6" rx="3" fill="${B.navy}" opacity="0.2"/>
+    <rect x="40" y="44" width="50" height="4" rx="2" fill="${B.navy}" opacity="0.1"/>
+    <!-- Email body lines (polished) -->
+    <rect x="40" y="60" width="120" height="5" rx="2.5" fill="${B.navy}" opacity="0.12"/>
+    <rect x="40" y="72" width="110" height="4" rx="2" fill="${B.navy}" opacity="0.08"/>
+    <rect x="40" y="82" width="100" height="4" rx="2" fill="${B.navy}" opacity="0.08"/>
+    <rect x="40" y="92" width="115" height="4" rx="2" fill="${B.navy}" opacity="0.08"/>
+    <rect x="40" y="102" width="80" height="4" rx="2" fill="${B.navy}" opacity="0.08"/>
+    <!-- Red X markers over missing context points -->
+    <g transform="translate(152, 56)">
+      <circle r="12" fill="${B.coral}" opacity="0.15"/>
+      <line x1="-5" y1="-5" x2="5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="5" y1="-5" x2="-5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(152, 82)">
+      <circle r="12" fill="${B.coral}" opacity="0.15"/>
+      <line x1="-5" y1="-5" x2="5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="5" y1="-5" x2="-5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(152, 105)">
+      <circle r="12" fill="${B.coral}" opacity="0.15"/>
+      <line x1="-5" y1="-5" x2="5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="5" y1="-5" x2="-5" y2="5" stroke="${B.coral}" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <!-- Labels for missing items -->
+    <text x="100" y="148" text-anchor="middle" fill="${B.coral}" font-size="8" font-weight="600" opacity="0.5" font-family="Inter">MISSING: PAIN POINTS · SIGNALS · CONTEXT</text>
+  </svg>`;
+}
+
+/** The Consequence: Deal dying — prospect walking away, pipeline breaking */
+function svgDealDeath(): string {
+  return `<svg width="200" height="170" viewBox="0 0 200 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Pipeline bar breaking -->
+    <rect x="20" y="70" width="70" height="16" rx="8" fill="${B.navy}" opacity="0.6"/>
+    <rect x="100" y="70" width="8" height="16" rx="4" fill="${B.coral}" opacity="0.4"/>
+    <rect x="118" y="70" width="70" height="16" rx="8" fill="${B.navy}" opacity="0.2"/>
+    <!-- Break crack -->
+    <path d="M92 65 L96 78 L88 82 L94 92" stroke="${B.coral}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <!-- Prospect walking away (right) -->
+    <circle cx="160" cy="35" r="12" fill="${B.coral}" opacity="0.3"/>
+    <circle cx="160" cy="35" r="8" fill="${B.coral}" opacity="0.6"/>
+    <rect x="153" y="50" width="14" height="22" rx="4" fill="${B.coral}" opacity="0.4"/>
+    <!-- Arrow showing departure -->
+    <path d="M165 45 L180 38" stroke="${B.coral}" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+    <polygon points="182,36 176,34 178,40" fill="${B.coral}" opacity="0.4"/>
+    <!-- Rep left behind (left) -->
+    <circle cx="40" cy="35" r="12" fill="${B.navy}" opacity="0.15"/>
+    <circle cx="40" cy="35" r="8" fill="${B.navy}" opacity="0.5"/>
+    <rect x="33" y="50" width="14" height="22" rx="4" fill="${B.navy}" opacity="0.3"/>
+    <!-- Dollar signs falling -->
+    <text x="70" y="120" fill="${B.coral}" font-size="14" opacity="0.2" font-family="Inter">$</text>
+    <text x="100" y="135" fill="${B.coral}" font-size="12" opacity="0.15" font-family="Inter">$</text>
+    <text x="130" y="125" fill="${B.coral}" font-size="16" opacity="0.25" font-family="Inter">$</text>
+    <!-- Down arrow -->
+    <path d="M100 105 L100 150" stroke="${B.coral}" stroke-width="1.5" opacity="0.3" stroke-dasharray="4 3"/>
+    <polygon points="95,148 100,158 105,148" fill="${B.coral}" opacity="0.3"/>
+  </svg>`;
+}
+
+/** The Insight: Two funnels — context vs chaos comparison */
+function svgTwoFunnels(): string {
+  return `<svg width="220" height="170" viewBox="0 0 220 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Left funnel (context → good output) -->
+    <text x="55" y="14" text-anchor="middle" fill="${B.navy}" font-size="9" font-weight="600" opacity="0.5" font-family="Inter">CONTEXT</text>
+    <polygon points="20,22 90,22 72,80 38,80" fill="${B.navy}" opacity="0.12" stroke="${B.navy}" stroke-width="1.5" opacity="0.3"/>
+    <!-- Input items going in (left) -->
+    <circle cx="35" cy="32" r="4" fill="${B.navy}" opacity="0.4"/>
+    <circle cx="50" cy="28" r="3" fill="${B.navy}" opacity="0.5"/>
+    <circle cx="65" cy="33" r="3.5" fill="${B.navy}" opacity="0.45"/>
+    <circle cx="55" cy="50" r="3" fill="${B.navy}" opacity="0.35"/>
+    <!-- Good output below -->
+    <rect x="35" y="90" width="40" height="50" rx="6" fill="${B.navy}" opacity="0.08" stroke="${B.navy}" stroke-width="1.5" opacity="0.25"/>
+    <rect x="41" y="100" width="28" height="3" rx="1.5" fill="${B.navy}" opacity="0.3"/>
+    <rect x="41" y="108" width="22" height="3" rx="1.5" fill="${B.navy}" opacity="0.2"/>
+    <rect x="41" y="116" width="26" height="3" rx="1.5" fill="${B.navy}" opacity="0.2"/>
+    <!-- Check mark -->
+    <circle cx="55" cy="148" r="8" fill="${B.navy}" opacity="0.1"/>
+    <path d="M50 148 L53 151 L60 144" stroke="${B.navy}" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- Right funnel (nothing → chaos) -->
+    <text x="165" y="14" text-anchor="middle" fill="${B.coral}" font-size="9" font-weight="600" opacity="0.5" font-family="Inter">CHAOS</text>
+    <polygon points="130,22 200,22 182,80 148,80" fill="${B.coral}" opacity="0.08" stroke="${B.coral}" stroke-width="1.5" opacity="0.3"/>
+    <!-- Empty funnel (nothing going in) -->
+    <text x="165" y="50" text-anchor="middle" fill="${B.coral}" font-size="18" opacity="0.2" font-family="Inter">∅</text>
+    <!-- Bad output below -->
+    <rect x="145" y="90" width="40" height="50" rx="6" fill="${B.coral}" opacity="0.06" stroke="${B.coral}" stroke-width="1.5" opacity="0.2"/>
+    <rect x="151" y="100" width="28" height="3" rx="1.5" fill="${B.coral}" opacity="0.15"/>
+    <rect x="151" y="108" width="22" height="3" rx="1.5" fill="${B.coral}" opacity="0.1"/>
+    <rect x="151" y="116" width="26" height="3" rx="1.5" fill="${B.coral}" opacity="0.1"/>
+    <!-- X mark -->
+    <circle cx="165" cy="148" r="8" fill="${B.coral}" opacity="0.1"/>
+    <line x1="161" y1="144" x2="169" y2="152" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="169" y1="144" x2="161" y2="152" stroke="${B.coral}" stroke-width="2" stroke-linecap="round"/>
+    <!-- VS divider -->
+    <text x="110" y="60" text-anchor="middle" fill="${B.mutedGrey}" font-size="11" font-weight="700" font-family="Inter">VS</text>
+    <line x1="110" y1="20" x2="110" y2="45" stroke="${B.lightGrey}" stroke-width="1" opacity="0.5"/>
+    <line x1="110" y1="70" x2="110" y2="160" stroke="${B.lightGrey}" stroke-width="1" opacity="0.5"/>
+  </svg>`;
+}
+
+/** CTA: Minimal question mark — clean close */
+function svgCtaQuestion(): string {
+  return `<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="80" cy="70" r="50" fill="${B.coral}" opacity="0.06"/>
+    <circle cx="80" cy="70" r="35" fill="${B.coral}" opacity="0.04" stroke="${B.coral}" stroke-width="1.5" opacity="0.15"/>
+    <text x="80" y="82" text-anchor="middle" fill="${B.coral}" font-size="48" font-weight="300" font-family="Inter" opacity="0.7">?</text>
+    <!-- Small speech bubble dots -->
+    <circle cx="80" cy="120" r="3" fill="${B.navy}" opacity="0.15"/>
+    <circle cx="90" cy="128" r="2" fill="${B.navy}" opacity="0.1"/>
+    <circle cx="98" cy="134" r="1.5" fill="${B.navy}" opacity="0.08"/>
+  </svg>`;
 }
 
 function svgTeam(): string {
@@ -476,7 +731,7 @@ function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string, 
   const headline = lines[0] || escapeHtml(slide.content);
   const subtitle = lines.length > 1 ? lines.slice(1).join('<br>') : '';
   const hSize = headline.length <= 50 ? 50 : headline.length <= 80 ? 42 : headline.length <= 120 ? 36 : 30;
-  const illustration = pickIllustration(slide.content, 'hook', slide.slideNumber);
+  const illustration = pickIllustration(slide.content, 'hook', slide.slideNumber, total);
 
   return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles(W, H)}
     .hook-main {
@@ -533,7 +788,7 @@ function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string, 
           <div class="hook-illust">${illustration}</div>
         </div>
       </div>
-      <div class="bottom-brand">MerakiPeople.AI</div>
+      <div class="bottom-brand">MerakiPeople</div>
       ${dotsHtml(slide.slideNumber, total)}
     </div>
   </body></html>`;
@@ -548,7 +803,7 @@ function contentSlideHtml(slide: CarouselSlideInput, total: number, title: strin
   const headSize = headline.length <= 40 ? 36 : headline.length <= 70 ? 30 : 24;
   const bodyLen = body.replace(/<br>/g, '').length;
   const bodySize = bodyLen <= 100 ? 22 : bodyLen <= 200 ? 19 : bodyLen <= 350 ? 17 : 15;
-  const illustration = pickIllustration(slide.content, 'content', slide.slideNumber);
+  const illustration = pickIllustration(slide.content, slide.type || 'content', slide.slideNumber, total);
 
   // Detect if content has bullet-like items (for feature-card layout)
   const bulletItems = content.split('\n').filter(l => /^[-•\d]/.test(l.trim()));
@@ -628,7 +883,7 @@ function contentSlideHtml(slide: CarouselSlideInput, total: number, title: strin
         </div>
         <div class="content-illust">${illustration}</div>
       </div>
-      <div class="bottom-brand">MerakiPeople.AI</div>
+      <div class="bottom-brand">MerakiPeople</div>
       ${dotsHtml(slide.slideNumber, total)}
     </div>
   </body></html>`;
@@ -681,7 +936,7 @@ function featureSlideHtml(slide: CarouselSlideInput, total: number, title: strin
         ${headline ? `<h2 class="feat-headline serif">${headline}</h2>` : ''}
         <div class="feature-row">${cards}</div>
       </div>
-      <div class="bottom-brand">MerakiPeople.AI</div>
+      <div class="bottom-brand">MerakiPeople</div>
       ${dotsHtml(slide.slideNumber, total)}
     </div>
   </body></html>`;
@@ -755,7 +1010,7 @@ function ctaSlideHtml(slide: CarouselSlideInput, total: number, title: string, W
         <div class="cta-button">Follow for more →</div>
         <div class="cta-url">merakipeople.ai</div>
       </div>
-      <div class="bottom-brand">MerakiPeople.AI</div>
+      <div class="bottom-brand">MerakiPeople</div>
       ${dotsHtml(slide.slideNumber, total)}
     </div>
   </body></html>`;
