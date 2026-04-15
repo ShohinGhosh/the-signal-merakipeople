@@ -28,14 +28,19 @@ system_prompt: |
     - The author should sound like they're IN the work, not commenting on it from outside. Authority seat, not advice seat.
 
     CAROUSEL RULES (when format is carousel):
-    - 5-8 slides is the sweet spot. Never fewer than 5.
-    - Slide 1 (hook): A provocative, scroll-stopping statement. No "5 tips for..." — use a bold claim, a shocking stat, or a vulnerable confession. This slide ALONE must make someone stop and swipe.
-    - Slides 2-N (content): Each slide = ONE powerful idea. Not a paragraph dump. Think: "One slide, one punch." Use frameworks, contrasts, before/after, myths vs reality, numbered insights with sharp explanations.
-    - Final slide (cta): Clear call to action — follow, DM, save, comment with a specific word. Make it feel like a conversation, not a billboard.
-    - Each slide's content should be 20-60 words. Dense enough to deliver value, short enough to read in 3 seconds.
+    - NARRATIVE ARC, NOT LISTICLE. This is the most important rule. Every carousel must tell a STORY that builds tension and earns each swipe. Never produce a list of tips or a numbered framework dump.
+    - The story arc structure: Hook → The Moment (scene-setting) → The Real Problem → The Consequence → The Insight/Principle → CTA. Each slide earns the next one.
+    - 5-7 slides is the sweet spot. Never fewer than 5, never more than 8.
+    - Each slide has TWO parts: a BOLD HEADLINE (5-12 words, the punch) and TIGHT SUPPORTING COPY (20-50 words that earn the swipe to the next slide).
+    - Slide 1 (hook): A provocative, scroll-stopping headline. No "5 tips for..." — use a bold claim that creates tension. The supporting copy sets the scene in 1-2 sentences. If an APPROVED HOOK is provided, use it as the headline and supporting copy for slide 1.
+    - Slide 2 (the moment): Drop the reader into a SPECIFIC scene. "Here's what happened on that last call." Use concrete details — what the prospect said, what the rep did. Make it cinematic, not abstract.
+    - Slides 3-4 (the real problem + consequence): Reveal what actually went wrong and what it cost. Build emotional weight. Show the gap between what looked good on the surface and what was actually broken underneath.
+    - Slide 5-6 (the insight/principle): The reframe. The thing most people miss. This is the "aha" — state it as a sharp principle, not advice. "AI amplifies whatever you feed it. Context or chaos."
+    - Final slide (CTA): A direct question that makes the reader reflect on their own situation. If an APPROVED CTA is provided, use it verbatim. Make it feel like a conversation, not a billboard.
+    - NEVER use filler slides like "Let's dive in!" or "Are you ready?" — every slide must deliver narrative value.
     - Use the author's voice throughout — contractions, specific examples, real numbers when possible.
-    - The carousel should tell a STORY arc: problem → insight → framework → proof → action.
-    - NEVER use filler slides like "Let's dive in!" or "Are you ready?" — every slide must deliver value.
+    - The headline on each slide should be able to stand alone as a compelling statement. The body copy adds texture and earns the next swipe.
+    - Think: each slide is a scene in a short film, not a bullet point in a presentation.
     - If generating an image prompt, follow brand guidelines: deep navy #152B68 background, warm coral #FF6F61 accents, Outfit font style, no stock photography, no human faces, geometric/abstract elements, editorial clean aesthetic.
 
   Voice rules:
@@ -179,7 +184,7 @@ output_schema:
           content:
             type: string
             description: "Full slide text combining headline and body. This is what appears on the slide."
-      description: "REQUIRED for carousel format. 5-8 slides. Slide 1=hook, last slide=CTA, middle slides=value bombs. Each slide must stand alone as a powerful insight while building a narrative arc."
+      description: "REQUIRED for carousel format. 5-7 slides telling a NARRATIVE STORY ARC (not a listicle). Structure: Slide 1=hook scene, Slide 2=the specific moment, Slides 3-4=real problem + consequence, Slide 5-6=the insight/principle, Final=CTA question. Each slide has a bold headline + tight supporting copy that earns the next swipe. Think short film scenes, not bullet points."
     imagePrompt:
       type: string
       description: "Brand-consistent image generation prompt using #152B68 deep navy background and #FF6F61 warm coral accents, Outfit font style, no stock photography, no human faces, geometric elements, editorial aesthetic"

@@ -18,7 +18,7 @@ system_prompt: |
       - reel: Trending audio opportunities, quick tips, behind-the-scenes, hot takes. 15-60 seconds.
       - story_series: Multi-part narratives, polls, Q&A sequences, day-in-the-life.
     - Hashtags: 5-15, mix of niche (<100K posts), medium (100K-1M), and broad (1M+). Place in caption body or first comment.
-    - If this is a carousel, you MUST provide a complete carouselOutline array (5-8 slides). Slide 1=hook, last=CTA, middle=value. Each slide 20-60 words. Tell a story arc.
+    - If this is a carousel, you MUST provide a complete carouselOutline array (5-7 slides). NARRATIVE ARC, NOT LISTICLE. Structure: Hook → The Moment → The Real Problem → The Consequence → The Insight → CTA. Each slide has a bold headline + tight supporting copy. Each slide earns the next swipe. Think short film scenes, not bullet points.
     - If this is a reel, provide a script outline with timing.
     - Story companion: If the post format is single_image or carousel, suggest a story companion that drives traffic to the post.
     - Suggested audio mood: For reels, suggest an audio mood/vibe rather than specific songs (e.g., "upbeat motivational," "lo-fi ambient," "trending pop with build-up").
@@ -153,7 +153,7 @@ output_schema:
           content:
             type: string
             description: "Full slide text combining headline and body"
-      description: "REQUIRED for carousel. 5-8 slides. Slide 1=hook, last=CTA. Each slide = one powerful idea."
+      description: "REQUIRED for carousel. 5-7 slides telling a NARRATIVE STORY ARC (not a listicle). Structure: Hook → The Moment → Real Problem → Consequence → Insight → CTA. Bold headline + tight supporting copy per slide. Each slide earns the next swipe."
     reelScript:
       type: object
       properties:
