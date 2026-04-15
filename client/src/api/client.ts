@@ -84,7 +84,7 @@ export const postsAPI = {
     api.post(`/posts/${id}/regenerate`, data),
   generateContent: (id: string, force?: boolean) =>
     api.post(`/posts/${id}/generate-content`, { force: force || false }),
-  generateImage: (id: string, data: { imageType: string; customPrompt?: string }) =>
+  generateImage: (id: string, data: { imageType: string; customPrompt?: string; aspectRatio?: string }) =>
     api.post(`/posts/${id}/generate-image`, data),
   list: (params?: Record<string, any>) => api.get('/posts', { params }),
   get: (id: string) => api.get(`/posts/${id}`),
@@ -197,6 +197,17 @@ export const promptsAPI = {
   list: () => api.get('/prompts'),
   get: (name: string) => api.get(`/prompts/${name}`),
   update: (name: string, content: string) => api.put(`/prompts/${name}`, { content }),
+};
+
+// ============ Foundation Docs API ============
+export const foundationDocsAPI = {
+  upload: (data: { fileName: string; mimeType: string; fileBase64: string; title?: string; description?: string; docType?: string }) =>
+    api.post('/foundation-docs', data),
+  list: () => api.get('/foundation-docs'),
+  get: (id: string) => api.get(`/foundation-docs/${id}`),
+  update: (id: string, data: Record<string, any>) => api.put(`/foundation-docs/${id}`, data),
+  reanalyse: (id: string) => api.post(`/foundation-docs/${id}/reanalyse`),
+  delete: (id: string) => api.delete(`/foundation-docs/${id}`),
 };
 
 // ============ Automations API ============

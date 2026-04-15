@@ -20,6 +20,7 @@ import journalRoutes from './routes/journal.routes';
 import promptsRoutes from './routes/prompts.routes';
 import feedbackRoutes from './routes/feedback.routes';
 import contentHistoryRoutes from './routes/content-history.routes';
+import foundationDocsRoutes from './routes/foundation-docs.routes';
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use('/api/journal', journalRoutes);
 app.use('/api/prompts', promptsRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/content-history', contentHistoryRoutes);
+app.use('/api/foundation-docs', foundationDocsRoutes);
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -2,6 +2,7 @@ import { Strategy } from '../../models/Strategy';
 import { Post } from '../../models/Post';
 import { SignalFeed } from '../../models/SignalFeed';
 import { Lead } from '../../models/Lead';
+import { FoundationDocument } from '../../models/FoundationDocument';
 
 export interface EvidenceContext {
   STRATEGY_CONTEXT: string;
@@ -10,6 +11,7 @@ export interface EvidenceContext {
   PERFORMANCE_CONTEXT: string;
   RECENT_SIGNALS: string;
   PIPELINE_CONTEXT: string;
+  FOUNDATION_DOCS: string;
 }
 
 /**
@@ -126,6 +128,22 @@ export async function gatherEvidenceContext(author?: string, campaignId?: string
       : 'empty'
   }`;
 
+  // Get active foundation documents
+  const foundationDocs = await FoundationDocument.find({ isActive: true })
+    .select('title docType extractedText')
+    .lean();
+
+  const foundationDocsContext =
+    foundationDocs.length > 0
+      ? foundationDocs
+          .map((d) => {
+            // Truncate very long docs to ~4000 chars each to stay within prompt limits
+            const text = (d.extractedText || '').substring(0, 4000);
+            return `--- ${d.title} (${d.docType}) ---\n${text}`;
+          })
+          .join('\n\n')
+      : '';
+
   return {
     STRATEGY_CONTEXT: strategyContext,
     AUTHOR_VOICE: authorVoice,
@@ -133,5 +151,6 @@ export async function gatherEvidenceContext(author?: string, campaignId?: string
     PERFORMANCE_CONTEXT: performanceContext,
     RECENT_SIGNALS: recentSignalsContext,
     PIPELINE_CONTEXT: pipelineContext,
+    FOUNDATION_DOCS: foundationDocsContext,
   };
 }

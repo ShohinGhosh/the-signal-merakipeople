@@ -18,7 +18,14 @@ export interface CarouselPdfResult {
   slideImageUrls: string[];
 }
 
-const S = 1080; // slide size in px
+const BASE = 1080; // base dimension in px
+
+/** Supported aspect ratios → [width, height] */
+const ASPECT_RATIOS: Record<string, [number, number]> = {
+  '1:1':  [1080, 1080],
+  '4:5':  [1080, 1350],
+  '9:16': [1080, 1920],
+};
 
 /* ─────────────────────────────────────────────
    Brand tokens — matching MerakiPeople / NotebookLM style
@@ -50,14 +57,14 @@ function fontLinks(): string {
   return '';
 }
 
-function baseStyles(): string {
+function baseStyles(W: number, H: number): string {
   return `
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: ${S}px;
-      height: ${S}px;
+      width: ${W}px;
+      height: ${H}px;
       overflow: hidden;
       font-family: 'Inter', -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
@@ -65,8 +72,8 @@ function baseStyles(): string {
     }
 
     .slide {
-      width: ${S}px;
-      height: ${S}px;
+      width: ${W}px;
+      height: ${H}px;
       position: relative;
       overflow: hidden;
       display: flex;
@@ -464,14 +471,14 @@ function dotsHtml(slideNum: number, total: number): string {
    SLIDE TEMPLATES
    ═══════════════════════════════════════════════════ */
 
-function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string, W = 1080, H = 1080): string {
   const lines = escapeHtml(slide.content).split('\n').filter(l => l.trim());
   const headline = lines[0] || escapeHtml(slide.content);
   const subtitle = lines.length > 1 ? lines.slice(1).join('<br>') : '';
   const hSize = headline.length <= 50 ? 50 : headline.length <= 80 ? 42 : headline.length <= 120 ? 36 : 30;
   const illustration = pickIllustration(slide.content, 'hook', slide.slideNumber);
 
-  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles(W, H)}
     .hook-main {
       flex: 1;
       display: flex;
@@ -532,7 +539,7 @@ function hookSlideHtml(slide: CarouselSlideInput, total: number, title: string):
   </body></html>`;
 }
 
-function contentSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+function contentSlideHtml(slide: CarouselSlideInput, total: number, title: string, W = 1080, H = 1080): string {
   const content = escapeHtml(slide.content);
   const lines = content.split('\n').filter(l => l.trim());
   const hasHeadline = lines.length > 1 && lines[0].length < 100;
@@ -548,10 +555,10 @@ function contentSlideHtml(slide: CarouselSlideInput, total: number, title: strin
   const useFeatureLayout = bulletItems.length >= 3 && bulletItems.length <= 4;
 
   if (useFeatureLayout) {
-    return featureSlideHtml(slide, total, title, headline, bulletItems);
+    return featureSlideHtml(slide, total, title, headline, bulletItems, W, H);
   }
 
-  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles(W, H)}
     .content-body-area {
       flex: 1;
       display: flex;
@@ -628,7 +635,7 @@ function contentSlideHtml(slide: CarouselSlideInput, total: number, title: strin
 }
 
 /** Feature-card layout for slides with 3-4 bullet points */
-function featureSlideHtml(slide: CarouselSlideInput, total: number, title: string, headline: string, items: string[]): string {
+function featureSlideHtml(slide: CarouselSlideInput, total: number, title: string, headline: string, items: string[], W = 1080, H = 1080): string {
   const icons = ['💡', '⚡', '🎯', '🔑'];
   const bgColors = [B.coralLight, B.navyTint, B.tealLight, B.coralLight];
 
@@ -642,7 +649,7 @@ function featureSlideHtml(slide: CarouselSlideInput, total: number, title: strin
 
   const headSize = headline.length <= 50 ? 36 : 28;
 
-  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles(W, H)}
     .feat-body {
       flex: 1;
       display: flex;
@@ -680,14 +687,14 @@ function featureSlideHtml(slide: CarouselSlideInput, total: number, title: strin
   </body></html>`;
 }
 
-function ctaSlideHtml(slide: CarouselSlideInput, total: number, title: string): string {
+function ctaSlideHtml(slide: CarouselSlideInput, total: number, title: string, W = 1080, H = 1080): string {
   const content = escapeHtml(slide.content);
   const lines = content.split('\n').filter(l => l.trim());
   const headline = lines[0] || content;
   const subtitle = lines.length > 1 ? lines.slice(1).join('<br>') : '';
   const hSize = headline.length <= 60 ? 44 : headline.length <= 100 ? 36 : 28;
 
-  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles()}
+  return `<!DOCTYPE html><html><head>${fontLinks()}<style>${baseStyles(W, H)}
     .cta-body {
       flex: 1;
       display: flex;
@@ -777,13 +784,15 @@ export async function generateCarouselPdf(
   slides: CarouselSlideInput[],
   postId: string,
   title: string = 'Carousel',
-  author: string = ''
+  author: string = '',
+  aspectRatio: string = '1:1'
 ): Promise<CarouselPdfResult> {
   if (!slides || slides.length === 0) {
     throw new Error('No carousel slides provided');
   }
 
-  console.log(`[carouselPdf] Generating ${slides.length}-slide carousel via Puppeteer...`);
+  const [W, H] = ASPECT_RATIOS[aspectRatio] || ASPECT_RATIOS['1:1'];
+  console.log(`[carouselPdf] Generating ${slides.length}-slide carousel (${W}x${H}, ${aspectRatio}) via Puppeteer...`);
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -795,7 +804,7 @@ export async function generateCarouselPdf(
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: S, height: S, deviceScaleFactor: 2 });
+    await page.setViewport({ width: W, height: H, deviceScaleFactor: 2 });
 
     // Pre-load Google Fonts once on a blank page
     await page.setContent(`<!DOCTYPE html><html><head>
@@ -817,9 +826,9 @@ export async function generateCarouselPdf(
     for (const slide of slides) {
       let html: string;
       switch (slide.type) {
-        case 'hook':  html = hookSlideHtml(slide, slides.length, title); break;
-        case 'cta':   html = ctaSlideHtml(slide, slides.length, title); break;
-        default:      html = contentSlideHtml(slide, slides.length, title); break;
+        case 'hook':  html = hookSlideHtml(slide, slides.length, title, W, H); break;
+        case 'cta':   html = ctaSlideHtml(slide, slides.length, title, W, H); break;
+        default:      html = contentSlideHtml(slide, slides.length, title, W, H); break;
       }
 
       // Use domcontentloaded — fonts are already cached from preload
@@ -827,7 +836,7 @@ export async function generateCarouselPdf(
       // Small delay to let layout settle
       await new Promise(r => setTimeout(r, 200));
 
-      const screenshot = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: S, height: S } });
+      const screenshot = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
       const buf = Buffer.isBuffer(screenshot) ? screenshot : Buffer.from(screenshot);
       slideBuffers.push(buf);
       console.log(`[carouselPdf] Slide ${slide.slideNumber}/${slides.length} rendered (${(buf.length / 1024).toFixed(0)} KB)`);
@@ -838,7 +847,7 @@ export async function generateCarouselPdf(
 
   // Assemble into PDF
   const doc = new PDFDocument({
-    size: [S, S],
+    size: [W, H],
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
     info: { Title: title, Author: author || 'MerakiPeople', Creator: 'The Signal — MerakiPeople Growth OS' },
   });
@@ -852,7 +861,7 @@ export async function generateCarouselPdf(
 
   for (let i = 0; i < slideBuffers.length; i++) {
     if (i > 0) doc.addPage();
-    doc.image(slideBuffers[i], 0, 0, { width: S, height: S });
+    doc.image(slideBuffers[i], 0, 0, { width: W, height: H });
   }
 
   doc.end();

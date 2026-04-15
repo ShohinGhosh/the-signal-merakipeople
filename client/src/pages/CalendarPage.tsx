@@ -1093,6 +1093,8 @@ function ContentCard({
   const [dirty, setDirty] = useState(false);
   // Content generation state
   const [generatingContent, setGeneratingContent] = useState(false);
+  // Carousel aspect ratio
+  const [carouselAspect, setCarouselAspect] = useState<'1:1' | '4:5' | '9:16'>('1:1');
   // Feedback state
   const [contentApproved, setContentApproved] = useState(false);
   const [imageApproved, setImageApproved] = useState(false);
@@ -1557,13 +1559,34 @@ function ContentCard({
 
                 {/* Carousel PDF download */}
                 {post.draftCarouselOutline?.length > 0 ? (
-                  <div className="flex gap-1.5 mb-2">
+                  <div className="mb-2 space-y-1.5">
+                    {/* Aspect ratio selector */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider">Ratio:</span>
+                      {(['1:1', '4:5', '9:16'] as const).map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setCarouselAspect(r)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                            carouselAspect === r
+                              ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                              : 'bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600'
+                          }`}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                      <span className="text-[10px] text-slate-300 ml-1">
+                        {carouselAspect === '1:1' ? '1080×1080' : carouselAspect === '4:5' ? '1080×1350' : '1080×1920'}
+                      </span>
+                    </div>
+                    <div className="flex gap-1.5">
                     {/* Generate / Regenerate PDF button */}
                     <button
                       onClick={async () => {
                         setGeneratingContent(true);
                         try {
-                          await postsAPI.generateImage(post._id, { imageType: 'carousel_pdf' });
+                          await postsAPI.generateImage(post._id, { imageType: 'carousel_pdf', aspectRatio: carouselAspect });
                           onPostUpdate();
                         } catch (err) {
                           console.error('Carousel PDF generation failed:', err);
@@ -1611,6 +1634,7 @@ function ContentCard({
                         <span className="text-xs font-medium">Download</span>
                       </button>
                     )}
+                    </div>
                   </div>
                 ) : null}
 
@@ -2200,28 +2224,28 @@ function TaskCard({
 
       <div className={compact ? 'p-2' : 'p-3'} onClick={showFeedback ? undefined : onClick}>
         {/* Platform + Author + Format row */}
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-1 mb-1">
+          <div className="flex items-center gap-1.5 min-w-0">
             {post.platform === 'linkedin' || post.platform === 'both' ? (
-              <Linkedin size={compact ? 10 : 12} className="text-blue-600" />
+              <Linkedin size={compact ? 10 : 12} className="text-blue-600 flex-shrink-0" />
             ) : null}
             {post.platform === 'instagram' || post.platform === 'both' ? (
-              <Instagram size={compact ? 10 : 12} className="text-pink-400" />
+              <Instagram size={compact ? 10 : 12} className="text-pink-400 flex-shrink-0" />
             ) : null}
             {post.platform === 'facebook' ? (
-              <Facebook size={compact ? 10 : 12} className="text-indigo-600" />
+              <Facebook size={compact ? 10 : 12} className="text-indigo-600 flex-shrink-0" />
             ) : null}
-            <span className="text-slate-400 capitalize">{post.author}</span>
+            <span className="text-slate-400 capitalize truncate">{post.author}</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0">
             <span
-              className="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase"
+              className="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase whitespace-nowrap"
               style={{ backgroundColor: `${formatColor}20`, color: formatColor }}
             >
               {post.format?.replace('_', ' ')}
             </span>
             <span
-              className="px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+              className="px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap"
               style={{ backgroundColor: statusConfig.bg, color: statusConfig.color }}
             >
               {statusConfig.label}

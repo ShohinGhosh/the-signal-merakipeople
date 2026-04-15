@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { promptsAPI, contentHistoryAPI, strategyAPI } from '../api/client';
+import { promptsAPI, contentHistoryAPI, strategyAPI, foundationDocsAPI } from '../api/client';
 import { useStrategy } from '../contexts/StrategyContext';
 import type { Strategy } from '../types';
 import * as XLSX from 'xlsx';
@@ -962,6 +962,507 @@ function ContentHistoryTab() {
 }
 
 // ─── Main Settings Page ───
+// ─── Foundation Documents Tab ───
+
+const DOC_TYPES = [
+  { value: 'sales_deck', label: 'Sales Deck' },
+  { value: 'case_study', label: 'Case Study' },
+  { value: 'brand_guidelines', label: 'Brand Guidelines' },
+  { value: 'product_info', label: 'Product Info' },
+  { value: 'competitor_intel', label: 'Competitor Intel' },
+  { value: 'process_doc', label: 'Process Doc' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+interface DocIntelligence {
+  summary?: string;
+  keyThemes?: string[];
+  messagingAnchors?: string[];
+  icpInsights?: string;
+  contentPillarFit?: string[];
+  proofPoints?: string[];
+  toneAndVoice?: string;
+  suggestedUses?: string[];
+}
+
+interface FoundationDoc {
+  _id: string;
+  title: string;
+  description: string;
+  docType: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  isActive: boolean;
+  intelligence: DocIntelligence | null;
+  aiCost: { inputTokens: number; outputTokens: number; costUsd: number; model: string } | null;
+  createdAt: string;
+}
+
+function FoundationDocsTab() {
+  const [docs, setDocs] = useState<FoundationDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editType, setEditType] = useState('other');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reanalysing, setReanalysing] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchDocs = useCallback(async () => {
+    try {
+      const { data } = await foundationDocsAPI.list();
+      setDocs(data.documents || []);
+    } catch (err) {
+      console.error('Failed to fetch foundation docs:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  // Poll for intelligence updates on docs that don't have it yet
+  useEffect(() => {
+    const pending = docs.filter((d) => !d.intelligence);
+    if (pending.length === 0) return;
+    const timer = setTimeout(() => fetchDocs(), 5000);
+    return () => clearTimeout(timer);
+  }, [docs, fetchDocs]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setUploadError('File too large. Maximum size is 10MB.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError('');
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      await foundationDocsAPI.upload({
+        fileName: file.name,
+        mimeType: file.type,
+        fileBase64: base64,
+        title: file.name.replace(/\.[^.]+$/, ''),
+        docType: 'other',
+      });
+
+      await fetchDocs();
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setUploadError(err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleToggleActive = async (doc: FoundationDoc) => {
+    try {
+      await foundationDocsAPI.update(doc._id, { isActive: !doc.isActive });
+      setDocs((prev) => prev.map((d) => (d._id === doc._id ? { ...d, isActive: !d.isActive } : d)));
+    } catch (err) {
+      console.error('Toggle failed:', err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await foundationDocsAPI.delete(id);
+      setDocs((prev) => prev.filter((d) => d._id !== id));
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  };
+
+  const handleReanalyse = async (id: string) => {
+    setReanalysing(id);
+    try {
+      await foundationDocsAPI.reanalyse(id);
+      // Poll for updated intelligence
+      setTimeout(() => fetchDocs(), 8000);
+    } catch (err) {
+      console.error('Reanalyse failed:', err);
+    } finally {
+      setTimeout(() => setReanalysing(null), 8000);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    try {
+      await foundationDocsAPI.update(editingId, {
+        title: editTitle,
+        description: editDesc,
+        docType: editType,
+      });
+      setDocs((prev) =>
+        prev.map((d) =>
+          d._id === editingId ? { ...d, title: editTitle, description: editDesc, docType: editType } : d
+        )
+      );
+      setEditingId(null);
+    } catch (err) {
+      console.error('Save failed:', err);
+    }
+  };
+
+  const startEdit = (doc: FoundationDoc) => {
+    setEditingId(doc._id);
+    setEditTitle(doc.title);
+    setEditDesc(doc.description);
+    setEditType(doc.docType);
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getTypeLabel = (type: string) => DOC_TYPES.find((t) => t.value === type)?.label || type;
+
+  return (
+    <div className="bg-white border border-slate-200/60 rounded-xl p-6 shadow-sm space-y-6">
+      <div>
+        <h3 className="text-sm font-semibold text-brand-coral uppercase tracking-wider flex items-center gap-2">
+          <FileText size={14} />
+          Foundation Documents
+        </h3>
+        <p className="text-xs text-slate-400 mt-1">
+          Upload company documents (sales decks, case studies, brand guidelines). AI extracts intelligence from each document and uses it to generate better content aligned with your strategy.
+        </p>
+      </div>
+
+      {/* Upload area */}
+      <div
+        onClick={() => !uploading && fileInputRef.current?.click()}
+        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+          uploading
+            ? 'border-purple-300 bg-purple-50'
+            : 'border-slate-200 hover:border-purple-300 hover:bg-purple-50/30'
+        }`}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.doc,.txt,.md"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+        {uploading ? (
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={24} className="animate-spin text-purple-500" />
+            <span className="text-sm text-purple-600 font-medium">Uploading & extracting intelligence...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Upload size={24} className="text-slate-300" />
+            <span className="text-sm text-slate-500 font-medium">Click to upload a document</span>
+            <span className="text-xs text-slate-400">PDF, DOCX, TXT, MD — up to 10MB</span>
+          </div>
+        )}
+      </div>
+
+      {uploadError && (
+        <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">
+          <AlertCircle size={14} />
+          {uploadError}
+        </div>
+      )}
+
+      {/* Documents list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 size={20} className="animate-spin text-slate-300" />
+        </div>
+      ) : docs.length === 0 ? (
+        <div className="text-center py-8 text-slate-400 text-sm">
+          No documents uploaded yet. Upload your first document to enhance AI content generation.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {docs.map((doc) => {
+            const intel = doc.intelligence;
+            const isExpanded = expandedId === doc._id;
+            const isPending = !intel && doc.isActive;
+
+            return (
+            <div
+              key={doc._id}
+              className={`border rounded-xl transition-colors ${
+                doc.isActive ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'
+              }`}
+            >
+              {editingId === doc._id ? (
+                /* Edit mode */
+                <div className="p-4 space-y-3">
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    placeholder="Document title"
+                  />
+                  <textarea
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
+                    rows={2}
+                    placeholder="Brief description (optional)"
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Type:</span>
+                    <select
+                      value={editType}
+                      onChange={(e) => setEditType(e.target.value)}
+                      className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    >
+                      {DOC_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveEdit}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium hover:bg-purple-700"
+                    >
+                      <Save size={12} /> Save
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200"
+                    >
+                      <X size={12} /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                {/* Header row */}
+                <div className="p-4 flex items-start justify-between gap-4">
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : doc._id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ChevronRight size={14} className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      <span className="text-sm font-medium text-slate-800 truncate">{doc.title}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 whitespace-nowrap">
+                        {getTypeLabel(doc.docType)}
+                      </span>
+                      {isPending && (
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-600">
+                          <Loader2 size={10} className="animate-spin" /> Analysing...
+                        </span>
+                      )}
+                      {intel && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600">
+                          Intelligence ready
+                        </span>
+                      )}
+                    </div>
+                    {intel?.summary && !isExpanded && (
+                      <p className="text-xs text-slate-400 mt-1 ml-[22px] line-clamp-1">{intel.summary}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-1.5 ml-[22px] text-[11px] text-slate-400">
+                      <span>{doc.fileName}</span>
+                      <span>{formatFileSize(doc.fileSize)}</span>
+                      <span>{new Date(doc.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleToggleActive(doc)}
+                      className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                        doc.isActive
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                      }`}
+                      title={doc.isActive ? 'Active — feeding into AI prompts' : 'Inactive — not used by AI'}
+                    >
+                      {doc.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                    <button
+                      onClick={() => handleReanalyse(doc._id)}
+                      disabled={reanalysing === doc._id}
+                      className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Re-analyse with AI"
+                    >
+                      {reanalysing === doc._id ? <Loader2 size={13} className="animate-spin" /> : <Brain size={13} />}
+                    </button>
+                    <button
+                      onClick={() => startEdit(doc)}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="Edit"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(doc._id)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded intelligence panel */}
+                {isExpanded && intel && (
+                  <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
+                    {/* Summary */}
+                    {intel.summary && (
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Summary</span>
+                        <p className="text-xs text-slate-600 mt-0.5">{intel.summary}</p>
+                      </div>
+                    )}
+
+                    {/* Key Themes + Content Pillar Fit */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {intel.keyThemes && intel.keyThemes.length > 0 && (
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Key Themes</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {intel.keyThemes.map((t, i) => (
+                              <span key={i} className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 text-blue-600">{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {intel.contentPillarFit && intel.contentPillarFit.length > 0 && (
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Strategy Pillar Fit</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {intel.contentPillarFit.map((p, i) => (
+                              <span key={i} className="px-2 py-0.5 rounded-full text-[11px] bg-purple-50 text-purple-600">{p}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ICP Insights */}
+                    {intel.icpInsights && (
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">ICP Insights</span>
+                        <p className="text-xs text-slate-600 mt-0.5">{intel.icpInsights}</p>
+                      </div>
+                    )}
+
+                    {/* Messaging Anchors */}
+                    {intel.messagingAnchors && intel.messagingAnchors.length > 0 && (
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Messaging Anchors</span>
+                        <ul className="mt-1 space-y-0.5">
+                          {intel.messagingAnchors.map((a, i) => (
+                            <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5">
+                              <span className="text-purple-400 mt-0.5 shrink-0">&bull;</span>
+                              {a}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Proof Points */}
+                    {intel.proofPoints && intel.proofPoints.length > 0 && (
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Proof Points & Data</span>
+                        <ul className="mt-1 space-y-0.5">
+                          {intel.proofPoints.map((p, i) => (
+                            <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5">
+                              <CheckCircle2 size={11} className="text-green-500 mt-0.5 shrink-0" />
+                              {p}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Tone & Voice */}
+                    {intel.toneAndVoice && (
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Tone & Voice</span>
+                        <p className="text-xs text-slate-600 mt-0.5">{intel.toneAndVoice}</p>
+                      </div>
+                    )}
+
+                    {/* Suggested Uses */}
+                    {intel.suggestedUses && intel.suggestedUses.length > 0 && (
+                      <div className="bg-purple-50 border border-purple-100 rounded-lg p-2.5">
+                        <span className="text-[10px] text-purple-600 uppercase tracking-wider font-medium">Suggested Content Uses</span>
+                        <ul className="mt-1 space-y-0.5">
+                          {intel.suggestedUses.map((s, i) => (
+                            <li key={i} className="text-xs text-purple-700 flex items-start gap-1.5">
+                              <span className="shrink-0">→</span>
+                              {s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* AI cost */}
+                    {doc.aiCost && (
+                      <div className="text-[10px] text-slate-300 text-right">
+                        Intelligence: {doc.aiCost.model} · ${doc.aiCost.costUsd?.toFixed(4)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Expanded but no intelligence yet */}
+                {isExpanded && !intel && (
+                  <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                    <div className="flex items-center gap-2 text-xs text-amber-600">
+                      <Loader2 size={12} className="animate-spin" />
+                      AI is analysing this document against your strategy. This usually takes 10-15 seconds...
+                    </div>
+                  </div>
+                )}
+                </>
+              )}
+            </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* How it feeds into strategy */}
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100 rounded-lg p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Brain size={14} className="text-purple-600" />
+          <span className="text-xs font-semibold text-purple-800">How Foundation Documents Feed Into Your Strategy</span>
+        </div>
+        <div className="text-xs text-purple-700/80 space-y-1.5 ml-[22px]">
+          <p><strong>Text Extraction:</strong> Raw text is extracted from every uploaded document (PDF, DOCX, TXT).</p>
+          <p><strong>AI Intelligence:</strong> Claude analyses each document to extract key themes, messaging anchors, proof points, ICP insights, and content pillar alignment.</p>
+          <p><strong>Content Generation:</strong> Active documents are injected as context into every AI prompt — post generation, calendar planning, journal analysis, and outreach drafting all reference your foundation docs.</p>
+          <p><strong>Toggle Control:</strong> Mark documents as Active/Inactive to control which ones the AI uses. Useful for seasonal content or deprecated materials.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Strategy Foundation Editor ───
 
 function StrategyFoundationTab() {
@@ -1332,6 +1833,7 @@ function StrategyFoundationTab() {
 
 const TABS = [
   { id: 'foundation', label: 'Strategy Foundation' },
+  { id: 'foundation-docs', label: 'Foundation Docs' },
   { id: 'prompts', label: 'AI Prompts' },
   { id: 'content-history', label: 'Content History' },
   { id: 'integrations', label: 'Integrations' },
@@ -1368,6 +1870,8 @@ export default function SettingsPage() {
 
       {/* Tab content */}
       {activeTab === 'foundation' && <StrategyFoundationTab />}
+
+      {activeTab === 'foundation-docs' && <FoundationDocsTab />}
 
       {activeTab === 'prompts' && (
         <div className="bg-white border border-slate-200/60 rounded-xl p-6 shadow-sm">
