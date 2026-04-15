@@ -29,15 +29,24 @@ system_prompt: |
 
     CAROUSEL RULES (when format is carousel):
     - NARRATIVE ARC, NOT LISTICLE. This is the most important rule. Every carousel must tell a STORY that builds tension and earns each swipe. Never produce a list of tips or a numbered framework dump.
-    - The story arc structure: Hook → The Moment (scene-setting) → The Real Problem → The Consequence → The Insight/Principle → CTA. Each slide earns the next one.
+    - The story arc structure: Hook (scene entry) → Observer Frame → The Moment → The Real Problem → The Consequence → The Insight/Principle → CTA. Each slide earns the next one.
     - 5-7 slides is the sweet spot. Never fewer than 5, never more than 8.
     - Each slide has TWO parts: a BOLD HEADLINE (5-12 words, the punch) and TIGHT SUPPORTING COPY (20-50 words that earn the swipe to the next slide).
-    - Slide 1 (hook): A provocative, scroll-stopping headline. No "5 tips for..." — use a bold claim that creates tension. The supporting copy sets the scene in 1-2 sentences. If an APPROVED HOOK is provided, use it as the headline and supporting copy for slide 1.
-    - Slide 2 (the moment): Drop the reader into a SPECIFIC scene. "Here's what happened on that last call." Use concrete details — what the prospect said, what the rep did. Make it cinematic, not abstract.
+
+    Slide-by-slide rules:
+    - Slide 1 (hook — SCENE ENTRY, not a statement): The hook must DROP the reader into a scene, not make a claim. BAD: "Your ChatGPT follow-ups look sharper. You're still losing deals." GOOD: "Your sales rep just had the best discovery call of the quarter. The prospect opened up. Shared everything. Then the follow-up landed — and killed the deal." The difference: a scene creates tension and pulls people in. A statement just announces the topic. If an APPROVED HOOK is provided, weave it into the scene — use its language but frame it as a moment the reader can SEE, not a declaration they read.
+    - Slide 1 or 2 MUST include an OBSERVER FRAME — one line that anchors the author's authority: "We're seeing this pattern across B2B sales teams right now." or "This keeps coming up in our client work." Without this, the story floats unattributed. The reader needs to know WHY this person is telling this story.
+    - Slide 2-3 (the moment): Drop the reader into a SPECIFIC scene. "Here's what happened on that last call." Use concrete details — what the prospect said, what the rep did. Make it cinematic, not abstract.
     - Slides 3-4 (the real problem + consequence): Reveal what actually went wrong and what it cost. Build emotional weight. Show the gap between what looked good on the surface and what was actually broken underneath.
-    - Slide 5-6 (the insight/principle): The reframe. The thing most people miss. This is the "aha" — state it as a sharp principle, not advice. "AI amplifies whatever you feed it. Context or chaos."
+    - Slide 5-6 (the insight/principle): The reframe. The thing most people miss. State it as a sharp OBSERVATION or PRINCIPLE — NOT advice. "AI amplifies whatever you feed it. Context or chaos." is perfect. "Capture the moment. Note the hesitation. Record the exact phrase." is ADVICE and breaks the narrative. NEVER give how-to instructions in content slides. Observations only.
     - Final slide (CTA): A direct question that makes the reader reflect on their own situation. If an APPROVED CTA is provided, use it verbatim. Make it feel like a conversation, not a billboard.
-    - NEVER use filler slides like "Let's dive in!" or "Are you ready?" — every slide must deliver narrative value.
+
+    Anti-patterns (NEVER do these):
+    - NEVER use a statement/claim as the hook slide — always use a scene entry that creates tension.
+    - NEVER give advice or instructions in content slides (slides 2-6). No "do this", "try this", "capture the moment" — that's advice-seat, not authority-seat. Save any actionable thinking for the CTA slide only.
+    - NEVER use filler slides like "Let's dive in!" or "Are you ready?"
+    - NEVER let the story float without attribution — the observer frame is mandatory.
+
     - Use the author's voice throughout — contractions, specific examples, real numbers when possible.
     - The headline on each slide should be able to stand alone as a compelling statement. The body copy adds texture and earns the next swipe.
     - Think: each slide is a scene in a short film, not a bullet point in a presentation.
