@@ -395,6 +395,29 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
     // Gather intelligence from past feedback
     const intelligence = await getIntelligenceContext(post.format, post.platform, post.contentPillar);
 
+    // Fetch the signal feed entry if linked (provides the primary input context)
+    let signalFeedEntry = '';
+    if (post.signalFeedId) {
+      const signal = await SignalFeed.findById(post.signalFeedId).lean();
+      if (signal) {
+        signalFeedEntry = `ORIGINAL FOUNDER INSIGHT (THIS IS THE PRIMARY INPUT — the post MUST be about this):\n"${(signal as any).rawText}"\n\nTags: ${((signal as any).tags || []).join(', ')}`;
+      }
+    }
+
+    // Build approved hook/CTA context — if the user already wrote or edited these, the AI must use them verbatim
+    const existingHook = post.linkedinHook || post.instagramHook || '';
+    const existingCta = post.cta || '';
+    let approvedFieldsContext = '';
+    if (existingHook || existingCta) {
+      approvedFieldsContext = '=== APPROVED CONTENT (USE EXACTLY AS WRITTEN) ===\n';
+      if (existingHook) {
+        approvedFieldsContext += `APPROVED HOOK (use this VERBATIM as the first line — do NOT rewrite, soften, or rephrase it):\n"${existingHook}"\n\n`;
+      }
+      if (existingCta) {
+        approvedFieldsContext += `APPROVED CTA (include this VERBATIM at the end of the body — do NOT omit or rephrase it):\n"${existingCta}"\n\n`;
+      }
+    }
+
     // Choose prompt based on platform
     const generatorPrompt = post.platform === 'instagram'
       ? 'post-generator-instagram'
@@ -409,6 +432,7 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
       critiquePrompt: 'post-critique',
       context: {
         ...evidenceContext,
+        SIGNAL_FEED_ENTRY: signalFeedEntry || `Topic brief: ${post.notes || 'No topic brief provided'}`,
         SIGNAL_TEXT: post.notes || '',
         PLATFORM: post.platform,
         FORMAT: post.format || 'text_post',
@@ -416,6 +440,7 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
         CURRENT_CONTENT: '',
         FEEDBACK_INTELLIGENCE: intelligence.promptAugmentation || '',
         CONTENT_HISTORY: contentHistory,
+        APPROVED_FIELDS: approvedFieldsContext,
       },
       operation: 'generate-post-content',
       user: post.author,
@@ -427,10 +452,15 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
     const useParsed = hasContentFields(parsed);
 
     // Update the post with generated content
+    // Preserve user-approved hook and CTA — only use AI-generated ones if the user hasn't set them
     post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
-    post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
-    post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
-    post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+    if (!existingHook) {
+      post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
+      post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
+    }
+    if (!existingCta) {
+      post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+    }
     post.hashtags = useParsed ? (parsed.hashtags || post.hashtags) : post.hashtags;
 
     if (parsed.carouselOutline && Array.isArray(parsed.carouselOutline)) {

@@ -77,6 +77,20 @@ export async function execute(
           feedbackIntel = intel.promptAugmentation || '';
         } catch { /* non-blocking */ }
 
+        // Build approved hook/CTA context — preserve what the user already wrote
+        const existingHook = post.linkedinHook || post.instagramHook || '';
+        const existingCta = post.cta || '';
+        let approvedFieldsContext = '';
+        if (existingHook || existingCta) {
+          approvedFieldsContext = '=== APPROVED CONTENT (USE EXACTLY AS WRITTEN) ===\n';
+          if (existingHook) {
+            approvedFieldsContext += `APPROVED HOOK (use this VERBATIM as the first line — do NOT rewrite, soften, or rephrase it):\n"${existingHook}"\n\n`;
+          }
+          if (existingCta) {
+            approvedFieldsContext += `APPROVED CTA (include this VERBATIM at the end of the body — do NOT omit or rephrase it):\n"${existingCta}"\n\n`;
+          }
+        }
+
         const result = await runAgentCritiqueLoop({
           generatorPrompt,
           critiquePrompt: 'post-critique',
@@ -88,6 +102,7 @@ export async function execute(
             FORMAT: format,
             CONTENT_PILLAR: post.contentPillar || '',
             FEEDBACK_INTELLIGENCE: feedbackIntel,
+            APPROVED_FIELDS: approvedFieldsContext,
           },
           operation: `agent-draft-${platform}-${format}`,
           user: author,
@@ -100,11 +115,15 @@ export async function execute(
         const parsed = result.parsed || {};
         const useParsed = hasContentFields(parsed);
 
-        // Update the post with generated content — only use parsed fields if they contain real content
+        // Update the post with generated content — preserve user-approved hook/CTA
         post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
-        post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
-        post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
-        post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+        if (!existingHook) {
+          post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
+          post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
+        }
+        if (!existingCta) {
+          post.cta = useParsed ? (parsed.cta || post.cta) : post.cta;
+        }
         post.hashtags = useParsed ? (parsed.hashtags || post.hashtags) : post.hashtags;
 
         // Handle carousel outline if format is carousel

@@ -11,6 +11,7 @@ system_prompt: |
     - Every post must serve a specific content pillar from the strategy.
     - Caption should be 80-160 words. Front-load value — the first line is your hook before the "more" truncation.
     - The first line hook must be compelling enough to make users tap "more." It should be a bold statement, question, or micro-story opener.
+    - The caption MUST end with the CTA. Never leave the post hanging without a closing call to action.
     - Format selection:
       - single_image: Strong visual statements, quotes, single insights.
       - carousel: Frameworks, tutorials, before/after, myth-busting. 5-10 slides optimal.
@@ -21,6 +22,16 @@ system_prompt: |
     - If this is a reel, provide a script outline with timing.
     - Story companion: If the post format is single_image or carousel, suggest a story companion that drives traffic to the post.
     - Suggested audio mood: For reels, suggest an audio mood/vibe rather than specific songs (e.g., "upbeat motivational," "lo-fi ambient," "trending pop with build-up").
+
+  Approved content rules (CRITICAL):
+    - If an APPROVED HOOK is provided, you MUST use it as the EXACT first line of the caption. Do NOT rewrite, soften, or rephrase it. The founder wrote it deliberately — copy it character for character.
+    - If an APPROVED CTA is provided, you MUST include it VERBATIM as the final line of the caption. Do NOT omit or rephrase it.
+    - Your job is to write the BODY between the hook and the CTA. The hook and CTA are locked.
+
+  Observer framing rules:
+    - Position the author as someone who OBSERVES patterns across their work, not someone giving advice from the sidelines.
+    - After the hook, add a brief anchoring line that establishes authority through observation.
+    - The author should sound like they're IN the work, not commenting on it from outside.
 
   Voice rules:
     - Write in the author's documented voice. Instagram allows slightly more casual than LinkedIn.
@@ -80,15 +91,20 @@ user_prompt: |
   === CURRENT CONTENT (if revising) ===
   {{CURRENT_CONTENT}}
 
+  === APPROVED HOOK & CTA (if present, use EXACTLY as written — do NOT modify) ===
+  {{APPROVED_FIELDS}}
+
   === PREVIOUS CRITIQUE ===
   {{PREVIOUS_FEEDBACK}}
 
   Generate an Instagram post that:
   1. Is DIRECTLY about the signal/topic above — not a generic pillar take
   2. Uses the author's authentic voice
-  3. Optimized for Instagram engagement — saves, shares, DMs
-  4. Has a strong visual hook for the caption
-  5. Includes relevant hashtags (3-5)
+  3. If an APPROVED HOOK is provided above, use it VERBATIM as the first line — do NOT rewrite or soften it
+  4. If an APPROVED CTA is provided above, include it VERBATIM as the final line of the caption
+  5. Optimized for Instagram engagement — saves, shares, DMs
+  6. Has a strong visual hook for the caption
+  7. Includes relevant hashtags (3-5)
 
 evidence_requirements:
   - "Every claim must cite its source: strategy document, signal feed entry, or performance data"

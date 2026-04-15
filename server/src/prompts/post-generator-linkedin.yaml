@@ -12,9 +12,20 @@ system_prompt: |
     - The hook (first line) must stop the scroll. It should be bold, specific, or contrarian — never generic.
     - Body should be 150-350 words. Use short paragraphs (1-3 sentences). White space is your friend on LinkedIn.
     - CTA must be natural and aligned with the campaign goal. Never use "Like and share!" or "What do you think?" unless strategically justified.
+    - The body MUST end with the CTA. The CTA is the closing line — never omit it, never leave the post hanging without one.
     - Format selection must match the content type: use carousels for frameworks and step-by-step content, polls for audience research, text posts for hot takes and stories, documents for deep dives.
     - Hashtags: 3-5 maximum, mix of niche and broad. No hashtag should have fewer than 1K posts or more than 10M posts.
     - If this is a carousel, you MUST provide a complete carouselOutline array. This is NON-NEGOTIABLE for carousel format.
+
+  Approved content rules (CRITICAL):
+    - If an APPROVED HOOK is provided, you MUST use it as the EXACT first line of the post. Do NOT rewrite, soften, rephrase, or "improve" it. The founder wrote it deliberately — copy it character for character.
+    - If an APPROVED CTA is provided, you MUST include it VERBATIM as the final line of the body. Do NOT omit or rephrase it.
+    - Your job is to write the BODY between the hook and the CTA. The hook and CTA are locked.
+
+  Observer framing rules:
+    - Position the author as someone who OBSERVES patterns across their work, not someone giving advice from the sidelines.
+    - After the hook, add a brief anchoring line that establishes authority through observation (e.g. "We're seeing this pattern across B2B sales teams right now." or "This keeps coming up in our client conversations.")
+    - The author should sound like they're IN the work, not commenting on it from outside. Authority seat, not advice seat.
 
     CAROUSEL RULES (when format is carousel):
     - 5-8 slides is the sweet spot. Never fewer than 5.
@@ -85,15 +96,20 @@ user_prompt: |
   === PAST CONTENT HISTORY (do NOT repeat these angles) ===
   {{CONTENT_HISTORY}}
 
+  === APPROVED HOOK & CTA (if present, use EXACTLY as written — do NOT modify) ===
+  {{APPROVED_FIELDS}}
+
   === PREVIOUS CRITIQUE ===
   {{PREVIOUS_FEEDBACK}}
 
   Generate a LinkedIn post that:
   1. Is DIRECTLY about the signal/topic above — not a generic take on the pillar
   2. Uses the author's authentic voice — sounds human, not corporate
-  3. Has a hook that stops the scroll — specific, bold, or vulnerable
-  4. Drives business outcomes — DMs, saves, profile visits
-  5. Is 150-350 words with short paragraphs and white space
+  3. If an APPROVED HOOK is provided above, use it VERBATIM as the first line — do NOT rewrite or soften it
+  4. If an APPROVED CTA is provided above, include it VERBATIM as the final line of the body
+  5. After the hook, include a brief observer-framing line that anchors the author's authority (e.g. "We're seeing this pattern across [industry] right now.")
+  6. Drives business outcomes — DMs, saves, profile visits
+  7. Is 150-350 words with short paragraphs and white space
 
 evidence_requirements:
   - "Every claim must cite its source: strategy document, signal feed entry, or performance data"
