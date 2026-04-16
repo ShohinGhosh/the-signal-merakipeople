@@ -1620,7 +1620,9 @@ function ContentCard({
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `carousel-${post.contentPillar || 'post'}.pdf`;
+                            const pillarSlug = (post.contentPillar || 'carousel').replace(/[^a-zA-Z0-9]+/g, '-').substring(0, 40);
+                            const hookSlug = (post.linkedinHook || post.instagramHook || post.notes || '').replace(/[^a-zA-Z0-9]+/g, '-').substring(0, 50);
+                            a.download = `carousel-${pillarSlug}${hookSlug ? '-' + hookSlug : ''}.pdf`.toLowerCase();
                             a.click();
                             window.URL.revokeObjectURL(url);
                           } catch (err) {

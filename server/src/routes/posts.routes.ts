@@ -728,8 +728,13 @@ router.get('/:id/carousel-pdf', async (req: Request, res: Response) => {
       return;
     }
 
+    // Build a descriptive filename from the post's content pillar and hook
+    const pillarSlug = (post.contentPillar || 'carousel').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40);
+    const hookSnippet = (post.linkedinHook || post.instagramHook || post.notes || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 50);
+    const pdfFileName = `carousel-${pillarSlug}${hookSnippet ? '-' + hookSnippet : ''}.pdf`.toLowerCase();
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="carousel-${id}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${pdfFileName}"`);
     fs.createReadStream(tmpPath).pipe(res);
   } catch (error: any) {
     res.status(500).json({ error: `Failed to serve carousel PDF: ${error.message}` });
