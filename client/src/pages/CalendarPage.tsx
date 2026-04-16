@@ -1093,8 +1093,9 @@ function ContentCard({
   const [dirty, setDirty] = useState(false);
   // Content generation state
   const [generatingContent, setGeneratingContent] = useState(false);
-  // Carousel aspect ratio
+  // Carousel aspect ratio & style
   const [carouselAspect, setCarouselAspect] = useState<'1:1' | '4:5' | '9:16'>('1:1');
+  const [carouselStyle, setCarouselStyle] = useState<'clean_light' | 'dark_navy' | 'white_minimal' | 'coral_bold'>('clean_light');
   // Feedback state
   const [contentApproved, setContentApproved] = useState(false);
   const [imageApproved, setImageApproved] = useState(false);
@@ -1580,13 +1581,36 @@ function ContentCard({
                         {carouselAspect === '1:1' ? '1080×1080' : carouselAspect === '4:5' ? '1080×1350' : '1080×1920'}
                       </span>
                     </div>
+                    {/* Style selector */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider">Style:</span>
+                      {([
+                        { id: 'clean_light', label: 'Clean', swatch: 'bg-slate-100 border-slate-300' },
+                        { id: 'dark_navy', label: 'Navy', swatch: 'bg-[#0D1B3E] border-[#2A4494]' },
+                        { id: 'white_minimal', label: 'Minimal', swatch: 'bg-white border-slate-300' },
+                        { id: 'coral_bold', label: 'Coral', swatch: 'bg-[#FFF0EE] border-[#FF6F61]' },
+                      ] as const).map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setCarouselStyle(s.id)}
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                            carouselStyle === s.id
+                              ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                              : 'bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600'
+                          }`}
+                        >
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full border ${s.swatch}`} />
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex gap-1.5">
                     {/* Generate / Regenerate PDF button */}
                     <button
                       onClick={async () => {
                         setGeneratingContent(true);
                         try {
-                          await postsAPI.generateImage(post._id, { imageType: 'carousel_pdf', aspectRatio: carouselAspect });
+                          await postsAPI.generateImage(post._id, { imageType: 'carousel_pdf', aspectRatio: carouselAspect, style: carouselStyle });
                           onPostUpdate();
                         } catch (err) {
                           console.error('Carousel PDF generation failed:', err);

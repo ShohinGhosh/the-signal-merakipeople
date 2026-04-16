@@ -84,7 +84,7 @@ export const postsAPI = {
     api.post(`/posts/${id}/regenerate`, data),
   generateContent: (id: string, force?: boolean) =>
     api.post(`/posts/${id}/generate-content`, { force: force || false }),
-  generateImage: (id: string, data: { imageType: string; customPrompt?: string; aspectRatio?: string }) =>
+  generateImage: (id: string, data: { imageType: string; customPrompt?: string; aspectRatio?: string; style?: string }) =>
     api.post(`/posts/${id}/generate-image`, data),
   list: (params?: Record<string, any>) => api.get('/posts', { params }),
   get: (id: string) => api.get(`/posts/${id}`),

@@ -578,7 +578,7 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
  */
 router.post('/:id/generate-image', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { imageType, customPrompt, aspectRatio } = req.body;
+  const { imageType, customPrompt, aspectRatio, style } = req.body;
 
   if (!imageType) {
     res.status(400).json({ error: 'imageType is required' });
@@ -607,7 +607,8 @@ router.post('/:id/generate-image', async (req: Request, res: Response) => {
         String(post._id),
         post.contentPillar || 'Carousel',
         post.author || '',
-        aspectRatio || '1:1'
+        aspectRatio || '1:1',
+        style || 'clean_light'
       );
 
       post.carouselPdfUrl = pdfResult.pdfUrl;

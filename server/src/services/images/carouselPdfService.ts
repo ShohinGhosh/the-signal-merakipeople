@@ -28,25 +28,51 @@ const ASPECT_RATIOS: Record<string, [number, number]> = {
 };
 
 /* ─────────────────────────────────────────────
-   Brand tokens — matching MerakiPeople / NotebookLM style
+   Brand tokens — multiple visual style presets
    ───────────────────────────────────────────── */
-const B = {
-  pageBg:     '#F5F5F5',   // clean light gray-white (matching NotebookLM spec)
-  white:      '#FFFFFF',
-  cardBg:     '#FFFFFF',
-  headBlack:  '#152B68',   // deep navy for headlines (brand primary)
-  bodyGrey:   '#4A4A5A',   // body text
-  mutedGrey:  '#8B8B9E',   // captions
-  lightGrey:  '#E0E0E0',   // borders, subtle elements
-  coral:      '#FF6F61',   // accent — callouts, highlights, icons
-  coralLight: '#FFF0EE',   // coral tint bg
-  coralDark:  '#E85A4F',
-  navy:       '#152B68',   // illustrations, icons
-  navyLight:  '#2A4494',
-  navyTint:   '#F0F2F8',   // light navy tint
-  teal:       '#0EA5A0',   // secondary accent
-  tealLight:  '#E6F7F6',
+export type CarouselStyle = 'clean_light' | 'dark_navy' | 'white_minimal' | 'coral_bold';
+
+interface BrandTokens {
+  pageBg: string; white: string; cardBg: string; headBlack: string;
+  bodyGrey: string; mutedGrey: string; lightGrey: string;
+  coral: string; coralLight: string; coralDark: string;
+  navy: string; navyLight: string; navyTint: string;
+  teal: string; tealLight: string;
+}
+
+const STYLE_PRESETS: Record<CarouselStyle, BrandTokens> = {
+  clean_light: {
+    pageBg: '#F5F5F5', white: '#FFFFFF', cardBg: '#FFFFFF',
+    headBlack: '#152B68', bodyGrey: '#4A4A5A', mutedGrey: '#8B8B9E', lightGrey: '#E0E0E0',
+    coral: '#FF6F61', coralLight: '#FFF0EE', coralDark: '#E85A4F',
+    navy: '#152B68', navyLight: '#2A4494', navyTint: '#F0F2F8',
+    teal: '#0EA5A0', tealLight: '#E6F7F6',
+  },
+  dark_navy: {
+    pageBg: '#0D1B3E', white: '#FFFFFF', cardBg: '#152B68',
+    headBlack: '#FFFFFF', bodyGrey: '#C8D4E8', mutedGrey: '#8899BB', lightGrey: '#2A4494',
+    coral: '#FF6F61', coralLight: '#FF6F6120', coralDark: '#E85A4F',
+    navy: '#FF6F61', navyLight: '#FF8577', navyTint: '#1A3358',
+    teal: '#4FD1C5', tealLight: '#1A3358',
+  },
+  white_minimal: {
+    pageBg: '#FFFFFF', white: '#FFFFFF', cardBg: '#FAFAFA',
+    headBlack: '#111111', bodyGrey: '#444444', mutedGrey: '#999999', lightGrey: '#EEEEEE',
+    coral: '#FF6F61', coralLight: '#FFF0EE', coralDark: '#E85A4F',
+    navy: '#111111', navyLight: '#333333', navyTint: '#F5F5F5',
+    teal: '#0EA5A0', tealLight: '#F0FAFA',
+  },
+  coral_bold: {
+    pageBg: '#FFF0EE', white: '#FFFFFF', cardBg: '#FFFFFF',
+    headBlack: '#152B68', bodyGrey: '#4A4A5A', mutedGrey: '#8B8B9E', lightGrey: '#FFD4CE',
+    coral: '#FF6F61', coralLight: '#FFE8E4', coralDark: '#E85A4F',
+    navy: '#152B68', navyLight: '#2A4494', navyTint: '#FFE8E4',
+    teal: '#152B68', tealLight: '#F0F2F8',
+  },
 };
+
+// Active brand tokens — set per generation call
+let B: BrandTokens = { ...STYLE_PRESETS.clean_light };
 
 /* ═══════════════════════════════════════════════════
    SHARED STYLES
@@ -1040,11 +1066,15 @@ export async function generateCarouselPdf(
   postId: string,
   title: string = 'Carousel',
   author: string = '',
-  aspectRatio: string = '1:1'
+  aspectRatio: string = '1:1',
+  style: CarouselStyle = 'clean_light'
 ): Promise<CarouselPdfResult> {
   if (!slides || slides.length === 0) {
     throw new Error('No carousel slides provided');
   }
+
+  // Apply the selected style preset
+  B = { ...STYLE_PRESETS[style] || STYLE_PRESETS.clean_light };
 
   const [W, H] = ASPECT_RATIOS[aspectRatio] || ASPECT_RATIOS['1:1'];
   console.log(`[carouselPdf] Generating ${slides.length}-slide carousel (${W}x${H}, ${aspectRatio}) via Puppeteer...`);

@@ -1135,16 +1135,88 @@ function FoundationDocsTab() {
 
   const getTypeLabel = (type: string) => DOC_TYPES.find((t) => t.value === type)?.label || type;
 
+  const brandGuidelinesDoc = docs.find((d) => d.docType === 'brand_guidelines');
+
   return (
     <div className="bg-white border border-slate-200/60 rounded-xl p-6 shadow-sm space-y-6">
       <div>
         <h3 className="text-sm font-semibold text-brand-coral uppercase tracking-wider flex items-center gap-2">
           <FileText size={14} />
-          Foundation Documents
+          Brand & Foundation Documents
         </h3>
         <p className="text-xs text-slate-400 mt-1">
           Upload company documents (sales decks, case studies, brand guidelines). AI extracts intelligence from each document and uses it to generate better content aligned with your strategy.
         </p>
+      </div>
+
+      {/* Brand Guidelines callout */}
+      <div className={`rounded-xl border-2 p-4 ${
+        brandGuidelinesDoc
+          ? 'border-green-200 bg-green-50/50'
+          : 'border-purple-200 bg-purple-50/30'
+      }`}>
+        <div className="flex items-start gap-3">
+          <div className={`p-2 rounded-lg ${brandGuidelinesDoc ? 'bg-green-100' : 'bg-purple-100'}`}>
+            <Shield size={20} className={brandGuidelinesDoc ? 'text-green-600' : 'text-purple-600'} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-semibold text-slate-800">Brand Guidelines</h4>
+            {brandGuidelinesDoc ? (
+              <div>
+                <p className="text-xs text-green-700 mt-0.5 flex items-center gap-1">
+                  <CheckCircle2 size={12} />
+                  Uploaded: {brandGuidelinesDoc.title}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  AI uses your brand guidelines for tone, voice, and visual consistency across all generated content.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload your brand guidelines to ensure AI-generated content matches your brand voice, tone, colours, and visual style.
+                </p>
+                <button
+                  onClick={() => {
+                    // Trigger file upload with brand_guidelines type pre-set
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.pdf,.docx,.doc,.txt,.md';
+                    input.onchange = async (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (!file) return;
+                      setUploading(true);
+                      setUploadError('');
+                      try {
+                        const buffer = await file.arrayBuffer();
+                        const base64 = btoa(
+                          new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                        );
+                        await foundationDocsAPI.upload({
+                          fileName: file.name,
+                          mimeType: file.type,
+                          fileBase64: base64,
+                          title: file.name.replace(/\.[^.]+$/, ''),
+                          docType: 'brand_guidelines',
+                        });
+                        await fetchDocs();
+                      } catch (err: any) {
+                        setUploadError(err.response?.data?.error || 'Upload failed');
+                      } finally {
+                        setUploading(false);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="mt-2 flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium hover:bg-purple-700 transition-colors"
+                >
+                  <Upload size={12} />
+                  Upload Brand Guidelines
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Upload area */}
@@ -1833,7 +1905,7 @@ function StrategyFoundationTab() {
 
 const TABS = [
   { id: 'foundation', label: 'Strategy Foundation' },
-  { id: 'foundation-docs', label: 'Foundation Docs' },
+  { id: 'foundation-docs', label: 'Brand & Docs' },
   { id: 'prompts', label: 'AI Prompts' },
   { id: 'content-history', label: 'Content History' },
   { id: 'integrations', label: 'Integrations' },
