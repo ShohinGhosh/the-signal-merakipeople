@@ -116,7 +116,11 @@ export async function execute(
         const useParsed = hasContentFields(parsed);
 
         // Update the post with generated content — preserve user-approved hook/CTA
-        post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+        const generatedContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+        post.aiGeneratedContent = generatedContent || '';
+        post.aiGeneratedHook = useParsed ? (parsed.linkedinHook || parsed.hook || '') : '';
+        post.aiGeneratedCta = useParsed ? (parsed.cta || '') : '';
+        post.draftContent = generatedContent;
         if (!existingHook) {
           post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
           post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;

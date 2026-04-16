@@ -453,7 +453,16 @@ router.post('/:id/generate-content', async (req: Request, res: Response) => {
 
     // Update the post with generated content
     // Preserve user-approved hook and CTA — only use AI-generated ones if the user hasn't set them
-    post.draftContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+    const generatedContent = useParsed ? (parsed.body || parsed.content || parsed.caption || parsed.draftContent) : result.content;
+    const generatedHook = useParsed ? (parsed.linkedinHook || parsed.hook || '') : '';
+    const generatedCta = useParsed ? (parsed.cta || '') : '';
+
+    // Store the original AI output for edit intelligence tracking
+    post.aiGeneratedContent = generatedContent || '';
+    post.aiGeneratedHook = generatedHook || existingHook || '';
+    post.aiGeneratedCta = generatedCta || existingCta || '';
+
+    post.draftContent = generatedContent;
     if (!existingHook) {
       post.linkedinHook = useParsed ? (parsed.linkedinHook || parsed.hook || post.linkedinHook) : post.linkedinHook;
       post.instagramHook = useParsed ? (parsed.instagramHook || parsed.hook || post.instagramHook) : post.instagramHook;
@@ -1008,15 +1017,45 @@ router.put('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const post = await Post.findByIdAndUpdate(id, req.body, { new: true });
-    if (!post) {
+    // Fetch existing post first to track edit diffs
+    const existing = await Post.findById(id);
+    if (!existing) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
 
+    // Track meaningful content edits for intelligence
+    const edits: Array<{ field: string; before: string; after: string; editedAt: Date }> = [];
+    const now = new Date();
+
+    if (req.body.draftContent !== undefined && req.body.draftContent !== existing.draftContent) {
+      edits.push({ field: 'content', before: existing.draftContent || '', after: req.body.draftContent, editedAt: now });
+    }
+    if (req.body.linkedinHook !== undefined && req.body.linkedinHook !== existing.linkedinHook) {
+      edits.push({ field: 'hook', before: existing.linkedinHook || '', after: req.body.linkedinHook, editedAt: now });
+    }
+    if (req.body.instagramHook !== undefined && req.body.instagramHook !== existing.instagramHook) {
+      edits.push({ field: 'hook', before: existing.instagramHook || '', after: req.body.instagramHook, editedAt: now });
+    }
+    if (req.body.cta !== undefined && req.body.cta !== existing.cta) {
+      edits.push({ field: 'cta', before: existing.cta || '', after: req.body.cta, editedAt: now });
+    }
+
+    // Append edit history (keep last 20 edits per post)
+    if (edits.length > 0) {
+      const currentHistory = existing.editHistory || [];
+      const updatedHistory = [...currentHistory, ...edits].slice(-20);
+      req.body.editHistory = updatedHistory;
+
+      console.log(`[Post Edit] ${edits.length} edit(s) tracked for post ${id}: ${edits.map(e => e.field).join(', ')}`);
+    }
+
+    const post = await Post.findByIdAndUpdate(id, req.body, { new: true });
+
     res.json({
       message: 'Post updated',
       post,
+      editsTracked: edits.length,
     });
   } catch (error: any) {
     res.status(500).json({ error: `Failed to update post: ${error.message}` });

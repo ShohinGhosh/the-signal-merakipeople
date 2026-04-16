@@ -24,7 +24,16 @@ export interface IPost extends Document {
   format: 'text_post' | 'carousel' | 'poll' | 'document' | 'video_caption' | 'reel' | 'story';
   contentPillar: string;
   draftContent: string;
+  aiGeneratedContent: string;
+  aiGeneratedHook: string;
+  aiGeneratedCta: string;
   draftCarouselOutline: ICarouselSlide[];
+  editHistory: Array<{
+    field: string;
+    before: string;
+    after: string;
+    editedAt: Date;
+  }>;
   finalContent: string;
   cta: string;
   hashtags: string[];
@@ -65,6 +74,9 @@ const PostSchema = new Schema<IPost>(
     },
     contentPillar: { type: String, default: '' },
     draftContent: { type: String, default: '' },
+    aiGeneratedContent: { type: String, default: '' },
+    aiGeneratedHook: { type: String, default: '' },
+    aiGeneratedCta: { type: String, default: '' },
     draftCarouselOutline: [
       {
         slideNumber: Number,
@@ -72,6 +84,12 @@ const PostSchema = new Schema<IPost>(
         type: { type: String, enum: ['hook', 'content', 'cta'] },
       },
     ],
+    editHistory: [{
+      field: { type: String },
+      before: { type: String },
+      after: { type: String },
+      editedAt: { type: Date, default: Date.now },
+    }],
     finalContent: { type: String, default: '' },
     cta: { type: String, default: '' },
     hashtags: [{ type: String }],

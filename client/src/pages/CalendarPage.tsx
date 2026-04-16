@@ -2473,6 +2473,7 @@ function TaskDetailDrawer({
   const [generatingContent, setGeneratingContent] = useState(false);
   const [isRegen, setIsRegen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState(post.draftContent || '');
+  const [editContent, setEditContent] = useState(post.draftContent || '');
 
   const handleFieldChange = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setter(e.target.value);
@@ -2487,6 +2488,7 @@ function TaskDetailDrawer({
         linkedinHook: editHook,
         instagramHook: editHook,
         cta: editCta,
+        draftContent: editContent,
       });
       setDirty(false);
       onPostUpdate();
@@ -2665,14 +2667,22 @@ function TaskDetailDrawer({
             </button>
           )}
 
-          {/* Content Draft */}
+          {/* Content Draft — editable */}
           {generatedContent && !generatingContent && (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="p-4">
                 <label className="text-xs text-slate-400 mb-2 block">Content Draft</label>
-                <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
-                  {generatedContent}
-                </div>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => {
+                    setEditContent(e.target.value);
+                    setGeneratedContent(e.target.value);
+                    setDirty(true);
+                  }}
+                  className="w-full bg-slate-50 rounded-lg p-4 text-sm text-slate-700 leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-brand-coral/40 focus:border-brand-coral/40 border border-transparent"
+                  style={{ minHeight: '200px' }}
+                  rows={Math.max(8, editContent.split('\n').length + 2)}
+                />
               </div>
             </div>
           )}
@@ -2688,7 +2698,9 @@ function TaskDetailDrawer({
                 setGeneratingContent(true);
                 try {
                   const { data } = await postsAPI.generateContent(post._id, true);
-                  setGeneratedContent(data.post?.draftContent || data.draftContent || '');
+                  const newContent = data.post?.draftContent || data.draftContent || '';
+                  setGeneratedContent(newContent);
+                  setEditContent(newContent);
                   onPostUpdate();
                 } catch (err) {
                   console.error('Content regeneration failed:', err);
@@ -2708,7 +2720,9 @@ function TaskDetailDrawer({
                 setGeneratingContent(true);
                 try {
                   const { data } = await postsAPI.generateContent(post._id);
-                  setGeneratedContent(data.post?.draftContent || data.draftContent || '');
+                  const newContent = data.post?.draftContent || data.draftContent || '';
+                  setGeneratedContent(newContent);
+                  setEditContent(newContent);
                   onPostUpdate();
                 } catch (err) {
                   console.error('Content generation failed:', err);

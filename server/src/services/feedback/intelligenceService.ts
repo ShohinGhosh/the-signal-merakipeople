@@ -1,4 +1,5 @@
 import Feedback, { IFeedback } from '../../models/Feedback';
+import { Post } from '../../models/Post';
 
 /**
  * The Intelligence Layer — aggregates user feedback into actionable patterns
@@ -198,6 +199,74 @@ export async function getIntelligenceContext(
         lines.push(`  - "${issue}" (${count}x)`);
       }
     }
+  }
+
+  // ── Edit Intelligence: learn from user edits to AI-generated content ──
+  try {
+    const editFilter: Record<string, any> = { 'editHistory.0': { $exists: true } };
+    if (format) editFilter.format = format;
+    if (platform) editFilter.platform = platform;
+    if (contentPillar) editFilter.contentPillar = contentPillar;
+
+    const postsWithEdits = await Post.find(editFilter)
+      .select('editHistory aiGeneratedContent draftContent format contentPillar')
+      .sort({ updatedAt: -1 })
+      .limit(30)
+      .lean();
+
+    if (postsWithEdits.length > 0) {
+      // Analyze edit patterns: what does the user consistently change?
+      const editPatterns = new Map<string, number>();
+      let totalEdits = 0;
+      let totalShorter = 0;
+      let totalLonger = 0;
+
+      for (const p of postsWithEdits) {
+        for (const edit of (p as any).editHistory || []) {
+          totalEdits++;
+          const before = (edit.before || '').length;
+          const after = (edit.after || '').length;
+          if (after < before * 0.85) totalShorter++;
+          if (after > before * 1.15) totalLonger++;
+
+          // Track which fields get edited most
+          editPatterns.set(edit.field, (editPatterns.get(edit.field) || 0) + 1);
+        }
+      }
+
+      if (totalEdits > 0) {
+        lines.push('');
+        lines.push('EDIT INTELLIGENCE (patterns from user edits to AI content):');
+        lines.push(`  - User has edited ${totalEdits} AI outputs across ${postsWithEdits.length} posts`);
+
+        if (totalShorter > totalEdits * 0.4) {
+          lines.push('  - STRONG PATTERN: User frequently shortens AI content — write more concisely');
+        }
+        if (totalLonger > totalEdits * 0.4) {
+          lines.push('  - STRONG PATTERN: User frequently expands AI content — write more detail');
+        }
+
+        for (const [field, count] of [...editPatterns.entries()].sort((a, b) => b[1] - a[1])) {
+          lines.push(`  - "${field}" field edited ${count} time${count > 1 ? 's' : ''} — pay extra attention here`);
+        }
+
+        // Sample recent edit diffs (show what the user changed)
+        const recentEdits = postsWithEdits.slice(0, 3);
+        for (const p of recentEdits) {
+          const edits = ((p as any).editHistory || []).slice(-1);
+          for (const edit of edits) {
+            if (edit.before && edit.after && edit.before !== edit.after) {
+              const beforeSnippet = (edit.before || '').substring(0, 80);
+              const afterSnippet = (edit.after || '').substring(0, 80);
+              lines.push(`  - Example edit (${edit.field}): "${beforeSnippet}..." → "${afterSnippet}..."`);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Non-blocking — edit intelligence is a nice-to-have
+    console.error('[Intelligence] Edit history analysis failed:', err);
   }
 
   return {
